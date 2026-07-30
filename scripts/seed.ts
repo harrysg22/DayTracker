@@ -1,5 +1,5 @@
 /**
- * Genera una base .dev-data/daytracker-seed.db con ~60 días de datos
+ * Genera una base .dev-data/ledger-seed.db con ~60 días de datos
  * falsos realistas, para desarrollar UI/dashboard sin esperar a
  * acumular datos reales.
  *
@@ -33,7 +33,7 @@ function parseArgs(argv: string[]): Record<string, string> {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const days = args.days ? Number(args.days) : 60;
-  const outPath = path.resolve(args.out ?? "./.dev-data/daytracker-seed.db");
+  const outPath = path.resolve(args.out ?? "./.dev-data/ledger-seed.db");
 
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   if (fs.existsSync(outPath)) fs.rmSync(outPath);

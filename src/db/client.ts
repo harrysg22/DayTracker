@@ -4,7 +4,7 @@ import { migrate } from "drizzle-orm/expo-sqlite/migrator";
 import migrations from "./migrations/migrations";
 import * as schema from "./schema";
 
-const DB_NAME = "daytracker.db";
+const DB_NAME = "ledger.db";
 
 export const expoDb = openDatabaseSync(DB_NAME);
 

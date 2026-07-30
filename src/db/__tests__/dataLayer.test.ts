@@ -70,7 +70,7 @@ describe("dataLayer", () => {
   });
 
   test("el timer activo sobrevive a un reinicio simulado de la app", async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "daytracker-"));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ledger-"));
     const tmpFile = path.join(tmpDir, "test.db");
 
     // "Sesión 1": arranca un timer y la app se cierra sin detenerlo.

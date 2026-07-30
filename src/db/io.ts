@@ -5,7 +5,7 @@ import { buildCsv } from "./csv";
 import type { DataLayer } from "./dataLayer";
 import { categories } from "./schema";
 
-const DB_FILE_NAME = "daytracker.db";
+const DB_FILE_NAME = "ledger.db";
 
 /**
  * CSV legible de un rango (por defecto, toda la historia). Usa
@@ -20,7 +20,7 @@ export async function exportCSV(
   const cats = await db.select().from(categories);
   const csv = buildCsv(rows, new Map(cats.map((c) => [c.id, c])));
 
-  const file = new File(Paths.cache, `daytracker-export-${Date.now()}.csv`);
+  const file = new File(Paths.cache, `ledger-export-${Date.now()}.csv`);
   file.write(csv);
 
   if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(file.uri);
@@ -33,7 +33,7 @@ export async function exportCSV(
  * capturar un WAL a medio aplicar y corromper el backup).
  */
 export async function exportBackup(dataLayer: DataLayer): Promise<{ uri: string }> {
-  const file = new File(Paths.cache, `daytracker-backup-${Date.now()}.db`);
+  const file = new File(Paths.cache, `ledger-backup-${Date.now()}.db`);
   await dataLayer.vacuumInto(file.uri);
   if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(file.uri);
   return { uri: file.uri };
