@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StatusBar, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { dataLayer, ensureDbReady, exportBackup, exportCSV, restoreBackup } from './src/db';
 import { OverlapError } from './src/db/errors';
 import { currentDeviceTzOffsetMin } from './src/db/dateUtils';
@@ -59,6 +59,7 @@ export default function App() {
   const { revision, invalidate } = useRevision();
   const { message: toastMessage, show: showToast } = useToast();
   const nowMs = useNow();
+  const insets = useSafeAreaInsets();
   const today = todayLocalDate();
   const tzOffsetMin = currentDeviceTzOffsetMin();
 
@@ -186,7 +187,7 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: theme.bg }]}>
+    <SafeAreaView style={[styles.root, { backgroundColor: theme.bg }]} edges={['top']}>
       <StatusBar barStyle={prefs.theme === 'dark' ? 'light-content' : 'dark-content'} />
 
       <View style={{ flex: 1 }}>
@@ -305,7 +306,7 @@ export default function App() {
         }
       />
 
-      <TabBar active={tab} onChange={setTab} theme={theme} bottomInset={0} />
+      <TabBar active={tab} onChange={setTab} theme={theme} bottomInset={insets.bottom} />
       <Toast message={toastMessage} theme={theme} />
 
       <Sheet visible={sheet === 'picker'} onClose={closeSheet} theme={theme}>

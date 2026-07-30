@@ -1,6 +1,6 @@
 import { Directory, File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import { db, expoDb } from "./client";
+import { db, expoDb, reopenDb } from "./client";
 import { buildCsv } from "./csv";
 import type { DataLayer } from "./dataLayer";
 import { categories } from "./schema";
@@ -44,9 +44,9 @@ export async function exportBackup(dataLayer: DataLayer): Promise<{ uri: string 
  * por el backup. La UI (Fase 5) DEBE pedir confirmación explícita antes
  * de llamar a esto — no hay vuelta atrás.
  *
- * Tras restaurar, la conexión module-level queda cerrada: la app debe
- * recargarse (p. ej. Updates.reloadAsync) para reabrir con los datos
- * restaurados.
+ * Cierra la conexión antes de copiar (escribir encima de un archivo con la
+ * conexión abierta puede corromper el WAL) y reopenDb() la reabre después
+ * sobre los datos restaurados — no hace falta recargar la app.
  */
 export async function restoreBackup(uri: string): Promise<void> {
   await expoDb.closeAsync();
@@ -56,4 +56,5 @@ export async function restoreBackup(uri: string): Promise<void> {
   const source = new File(uri);
 
   await source.copy(target, { overwrite: true });
+  await reopenDb();
 }

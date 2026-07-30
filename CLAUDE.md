@@ -8,8 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm start              # expo start (dev server, pick platform from the menu)
-npm run ios            # expo start --ios
-npm run android        # expo start --android
+npm run ios            # expo run:ios
+npm run android        # expo run:android
 npm run web             # expo start --web
 
 npm test                # run all jest tests
@@ -66,10 +66,14 @@ never touches SQL directly.
   these and turns them into toast messages.
 - **`ids.ts`** — IDs are client-generated UUIDs (`expo-crypto`), never
   autoincrement, to leave room for future multi-device sync.
+- **`csv.ts`** — pure CSV formatting (`buildCsv`); no filesystem access.
 - **`io.ts`** — CSV export, and backup/restore via SQLite `VACUUM INTO` (the
   only safe way to snapshot a WAL-mode DB) plus `expo-file-system` /
   `expo-sharing`. Restoring closes and replaces the DB file; the app must be
   reloaded afterward.
+- **`seedData.ts`** — deterministic fake-data generator (mulberry32 PRNG) used
+  by `scripts/seed.ts` (`npm run db:seed`) to populate a dev SQLite file with
+  realistic entries, without waiting on real usage.
 - **`index.ts`** — barrel export and the app-wide `dataLayer` singleton.
 - **Migrations** — edit `schema.ts`, run `npm run db:generate`, which drops a
   new `.sql` file into `src/db/migrations/`. `migrations.js` wires those files
@@ -87,7 +91,9 @@ never touches SQL directly.
   counter that's bumped after every successful write; `useCategories`,
   `useDay`, `useRange`, `useActiveTimer` all refetch whenever that counter (or
   their own args) change. `useNow()` drives the live timer display and
-  resyncs on app foreground rather than accumulating drift.
+  resyncs on app foreground rather than accumulating drift. `categoryLayer`
+  is exported as a lazy `Proxy` so it's safe to import at module scope
+  without touching the DB before `ensureDbReady()` resolves.
 - **`screens/`** — top-level tab screens (`DayScreen`, `InsightsScreen`,
   `CategoriesScreen`), rendered by `App.tsx` based on the active tab.
 - **`sheets/`** — modal editors (`EntryEditSheet`, `CategoryEditSheet`,

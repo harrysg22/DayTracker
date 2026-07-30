@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { dataLayer } from '../db';
 import { createCategoryLayer } from '../db/categories';
-import { db } from '../db/client';
+import { db, onDbReopen } from '../db/client';
 import { computeLocalDate, currentDeviceTzOffsetMin } from '../db/dateUtils';
 import type { Category, Entry } from '../db/schema';
 
@@ -13,6 +13,10 @@ export const categoryLayer = new Proxy({} as ReturnType<typeof createCategoryLay
     if (!_categoryLayer) _categoryLayer = createCategoryLayer(db as any);
     return (_categoryLayer as any)[prop];
   },
+});
+/** Rebuild after a reopenDb() (e.g. restoreBackup) so we stop pointing at a closed connection. */
+onDbReopen(() => {
+  _categoryLayer = null;
 });
 
 /**
