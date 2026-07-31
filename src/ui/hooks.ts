@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { dataLayer } from '../db';
+import { dataLayer, eventLayer, todoLayer } from '../db';
 import { createCategoryLayer } from '../db/categories';
 import { db, onDbReopen } from '../db/client';
 import { computeLocalDate, currentDeviceTzOffsetMin } from '../db/dateUtils';
-import type { Category, Entry } from '../db/schema';
+import type { Category, Entry, PlanEvent, Todo } from '../db/schema';
 
 let _categoryLayer: ReturnType<typeof createCategoryLayer> | null = null;
 /** Lazy so nothing touches the database before ensureDbReady() resolves. */
@@ -153,4 +153,38 @@ export function categoryMap(categories: Category[]): Record<string, Category> {
 export function qualifiedName(category: Category, byId: Record<string, Category>): string {
   const parent = category.parentId ? byId[category.parentId] : null;
   return parent ? parent.name + ' › ' + category.name : category.name;
+}
+
+/** To-dos en un rango de fechas ('YYYY-MM-DD'), incluidos los vencidos. */
+export function useTodos(from: string, to: string, revision: number, enabled = true) {
+  const [todos, setTodos] = useState<Todo[]>([]);
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    todoLayer
+      .listByDateRange(from, to)
+      .then((rows) => alive && setTodos(rows))
+      .catch((err) => console.warn('listTodos failed', err));
+    return () => {
+      alive = false;
+    };
+  }, [from, to, revision, enabled]);
+  return todos;
+}
+
+/** Eventos planeados en un rango de fechas. */
+export function useEvents(from: string, to: string, revision: number, enabled = true) {
+  const [events, setEvents] = useState<PlanEvent[]>([]);
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    eventLayer
+      .listByRange(from, to)
+      .then((rows) => alive && setEvents(rows))
+      .catch((err) => console.warn('listEvents failed', err));
+    return () => {
+      alive = false;
+    };
+  }, [from, to, revision, enabled]);
+  return events;
 }

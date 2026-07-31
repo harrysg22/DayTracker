@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { dataLayer, ensureDbReady, exportBackup, exportCSV, restoreBackup } from './src/db';
+import {
+  dataLayer,
+  ensureDbReady,
+  eventLayer,
+  exportBackup,
+  exportCSV,
+  restoreBackup,
+  todoLayer,
+} from './src/db';
 import { OverlapError } from './src/db/errors';
 import { currentDeviceTzOffsetMin } from './src/db/dateUtils';
-import type { Category, Entry } from './src/db/schema';
+import type { Category, Entry, PlanEvent, Todo } from './src/db/schema';
 import { Sheet } from './src/ui/components/Sheet';
 import { TabBar } from './src/ui/components/TabBar';
 import type { TabKey } from './src/ui/components/TabBar';
@@ -18,28 +26,35 @@ import {
   useActiveTimer,
   useCategories,
   useDay,
+  useEvents,
   useNow,
   useRange,
   useRevision,
+  useTodos,
   useToast,
 } from './src/ui/hooks';
-import { localMidnightMs, minutesIntoLocalDay, snapMs } from './src/ui/format';
+import { fmt12, fmtShortDate, localMidnightMs, minutesIntoLocalDay, shiftLocalDate, snapMs } from './src/ui/format';
 import { periodStart } from './src/ui/insights';
 import type { RangeKind } from './src/ui/insights';
 import { DEFAULT_PREFS, loadPrefs, savePrefs } from './src/ui/prefs';
 import type { Prefs } from './src/ui/prefs';
+import { CalendarScreen } from './src/ui/screens/CalendarScreen';
+import type { CalendarMode } from './src/ui/screens/CalendarScreen';
 import { CategoriesScreen } from './src/ui/screens/CategoriesScreen';
 import { DayScreen } from './src/ui/screens/DayScreen';
 import { InsightsScreen } from './src/ui/screens/InsightsScreen';
+import { TodoScreen } from './src/ui/screens/TodoScreen';
 import { CategoryEditSheet } from './src/ui/sheets/CategoryEditSheet';
 import type { CategoryDraft } from './src/ui/sheets/CategoryEditSheet';
 import { CategoryPickerSheet } from './src/ui/sheets/CategoryPickerSheet';
 import { EntryEditSheet } from './src/ui/sheets/EntryEditSheet';
+import { EventSheet } from './src/ui/sheets/EventSheet';
 import { LongTimerSheet } from './src/ui/sheets/LongTimerSheet';
 import { MonthJumpSheet } from './src/ui/sheets/MonthJumpSheet';
+import { TodoSheet } from './src/ui/sheets/TodoSheet';
 import { PALETTE, THEMES } from './src/ui/theme';
 
-type SheetKind = null | 'picker' | 'entry' | 'long' | 'date' | 'category';
+type SheetKind = null | 'picker' | 'entry' | 'long' | 'date' | 'category' | 'todo' | 'event';
 
 export default function App() {
   const [dbReady, setDbReady] = useState(false);
@@ -55,6 +70,11 @@ export default function App() {
   const [eligibleParents, setEligibleParents] = useState<Category[]>([]);
   const [draftUsage, setDraftUsage] = useState({ entryCount: 0, totalMs: 0 });
   const [recentUse, setRecentUse] = useState<Record<string, number>>({});
+  const [calMode, setCalMode] = useState<CalendarMode>('day');
+  const [calDate, setCalDate] = useState(() => todayLocalDate());
+  const [showDoneTodos, setShowDoneTodos] = useState(false);
+  const [todoId, setTodoId] = useState<string | null>(null);
+  const [eventId, setEventId] = useState<string | null>(null);
 
   const { revision, invalidate } = useRevision();
   const { message: toastMessage, show: showToast } = useToast();
@@ -83,6 +103,20 @@ export default function App() {
   const byId = useMemo(() => categoryMap(categories), [categories]);
   const { entries: dayEntries } = useDay(localDate, revision, dbReady);
   const timer = useActiveTimer(revision, dbReady);
+
+  // Medio año atrás cubre cualquier vencido; la tabla es pequeña y va indexada.
+  const todos = useTodos(shiftLocalDate(today, -180), shiftLocalDate(today, 2), revision, dbReady);
+  // ±45 días cubre la semana y el mes visibles sin recargar al navegar.
+  const events = useEvents(shiftLocalDate(calDate, -45), shiftLocalDate(calDate, 45), revision, dbReady);
+
+  const editTodo: Todo | null = useMemo(
+    () => (todoId ? todos.find((t) => t.id === todoId) ?? null : null),
+    [todoId, todos]
+  );
+  const editEvent: PlanEvent | null = useMemo(
+    () => (eventId ? events.find((e) => e.id === eventId) ?? null : null),
+    [eventId, events]
+  );
 
   // Insights needs the current period plus the whole previous one.
   const insightsFrom = useMemo(
@@ -141,7 +175,30 @@ export default function App() {
   const closeSheet = useCallback(() => {
     setSheet(null);
     setDraggingEntryId(null);
+    setTodoId(null);
+    setEventId(null);
   }, []);
+
+  /** Minutos transcurridos hoy — la agenda atenúa lo que ya pasó. */
+  const nowMinute = minutesIntoLocalDay(nowMs, tzOffsetMin, today);
+
+  /**
+   * El puente entre planear y registrar: arranca el timer con la categoría del
+   * ítem y su texto como nota. El ítem no se modifica — terminar un timer no
+   * marca la tarea, eso es decisión de producto y hoy son independientes.
+   */
+  const startFromItem = useCallback(
+    (categoryId: string, note: string) => {
+      closeSheet();
+      setTab('day');
+      setLocalDate(today);
+      void run(async () => {
+        const started = await dataLayer.startTimer(categoryId);
+        if (started?.id) await dataLayer.updateEntry(started.id, { note });
+      }, 'Started ' + (byId[categoryId]?.name ?? '') + ' · ' + note);
+    },
+    [byId, closeSheet, run, today]
+  );
 
   const openCategorySheet = useCallback(
     async (category: Category | null) => {
@@ -250,6 +307,55 @@ export default function App() {
                 })
               )
             }
+          />
+        )}
+
+        {tab === 'todo' && (
+          <TodoScreen
+            todos={todos}
+            today={today}
+            categoriesById={byId}
+            theme={theme}
+            showDone={showDoneTodos}
+            canStartTimer={!timer}
+            onToggleShowDone={() => setShowDoneTodos((v) => !v)}
+            onToggleDone={(todo) =>
+              void run(() => todoLayer.toggleDone(todo.id, todo.done === 0, today))
+            }
+            onOpenTodo={(todo) => {
+              setTodoId(todo.id);
+              setSheet('todo');
+            }}
+            onCreate={(text, dueDate) => void run(() => todoLayer.create({ text, dueDate }))}
+            onStartTimer={(todo) => todo.categoryId && startFromItem(todo.categoryId, todo.text)}
+          />
+        )}
+
+        {tab === 'week' && (
+          <CalendarScreen
+            mode={calMode}
+            onChangeMode={setCalMode}
+            selectedDate={calDate}
+            onSelectDate={setCalDate}
+            today={today}
+            events={events}
+            categoriesById={byId}
+            categories={categories}
+            theme={theme}
+            canStartTimer={!timer}
+            nowMinute={nowMinute}
+            onOpenEvent={(event) => {
+              setEventId(event.id);
+              setSheet('event');
+            }}
+            onStartTimer={(event) => event.categoryId && startFromItem(event.categoryId, event.title)}
+            onCreate={(input) =>
+              void run(
+                () => eventLayer.create(input),
+                'Saved · ' + fmtShortDate(input.localDate) + ' ' + fmt12(input.startMinute)
+              )
+            }
+            onWarn={(message) => showToast(message)}
           />
         )}
 
@@ -446,20 +552,72 @@ export default function App() {
               const draft = categoryDraft;
               if (!draft.id || !reassignTarget) return;
               closeSheet();
-              void run(
-                () => categoryLayer.deleteCategory(draft.id!, { kind: 'reassign', reassignToId: reassignTarget.id }),
-                'Entries moved to ' + reassignTarget.name
-              );
+              void run(async () => {
+                await todoLayer.clearCategory(draft.id!);
+                await eventLayer.clearCategory(draft.id!);
+                await categoryLayer.deleteCategory(draft.id!, { kind: 'reassign', reassignToId: reassignTarget.id });
+              }, 'Entries moved to ' + reassignTarget.name);
             }}
             onDeleteWithEntries={() => {
               const draft = categoryDraft;
               if (!draft.id) return;
               closeSheet();
-              void run(
-                () => categoryLayer.deleteCategory(draft.id!, { kind: 'cascade' }),
-                draft.name + ' deleted'
-              );
+              void run(async () => {
+                await todoLayer.clearCategory(draft.id!);
+                await eventLayer.clearCategory(draft.id!);
+                await categoryLayer.deleteCategory(draft.id!, { kind: 'cascade' });
+              }, draft.name + ' deleted');
             }}
+          />
+        )}
+      </Sheet>
+
+      <Sheet visible={sheet === 'todo' && !!editTodo} onClose={closeSheet} theme={theme}>
+        {editTodo && (
+          <TodoSheet
+            todo={editTodo}
+            categories={categories}
+            today={today}
+            theme={theme}
+            canStartTimer={!timer}
+            onChangeText={(text) => void run(() => todoLayer.update(editTodo.id, { text }))}
+            onChangeCategory={(categoryId) => void run(() => todoLayer.update(editTodo.id, { categoryId }))}
+            onChangeDueDate={(dueDate) => void run(() => todoLayer.update(editTodo.id, { dueDate }))}
+            onStartTimer={() => editTodo.categoryId && startFromItem(editTodo.categoryId, editTodo.text)}
+            onDelete={() => {
+              closeSheet();
+              void run(() => todoLayer.softDelete(editTodo.id), 'Removed');
+            }}
+            onDone={closeSheet}
+          />
+        )}
+      </Sheet>
+
+      <Sheet visible={sheet === 'event' && !!editEvent} onClose={closeSheet} theme={theme}>
+        {editEvent && (
+          <EventSheet
+            event={editEvent}
+            categories={categories}
+            theme={theme}
+            canStartTimer={!timer}
+            onChangeTitle={(title) => void run(() => eventLayer.update(editEvent.id, { title }))}
+            onNudge={(field, delta) =>
+              void run(() =>
+                eventLayer.update(
+                  editEvent.id,
+                  field === 'start'
+                    ? { startMinute: editEvent.startMinute + delta }
+                    : { durationMinutes: editEvent.durationMinutes + delta }
+                )
+              )
+            }
+            onChangeCategory={(categoryId) => void run(() => eventLayer.update(editEvent.id, { categoryId }))}
+            onStartTimer={() => editEvent.categoryId && startFromItem(editEvent.categoryId, editEvent.title)}
+            onDelete={() => {
+              closeSheet();
+              void run(() => eventLayer.softDelete(editEvent.id), 'Event removed');
+            }}
+            onDone={closeSheet}
           />
         )}
       </Sheet>
