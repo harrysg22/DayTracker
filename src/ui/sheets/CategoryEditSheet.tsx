@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
   input: { marginTop: 14, padding: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, fontSize: 14, fontWeight: '600' },
   eyebrow: { marginTop: 18, marginBottom: 10, fontSize: 11, fontWeight: '500', letterSpacing: 0.66, textTransform: 'uppercase' },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  swatch: { width: '11.5%', aspectRatio: 1, borderRadius: 11 },
+  swatch: { width: 36, height: 36, borderRadius: 11 },
   nestHead: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 18, marginBottom: 10 },
   nestHint: { flex: 1, fontSize: 11, lineHeight: 15 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
