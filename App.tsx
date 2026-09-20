@@ -706,6 +706,7 @@ export default function App() {
             onChangeText={(text) => void run(() => todoLayer.update(editTodo.id, { text }))}
             onChangeCategory={(categoryId) => void run(() => todoLayer.update(editTodo.id, { categoryId }))}
             onChangeDueDate={(dueDate) => void run(() => todoLayer.update(editTodo.id, { dueDate }))}
+            onChangePriority={(priority) => void run(() => todoLayer.update(editTodo.id, { priority }))}
             onStartTimer={() => editTodo.categoryId && startFromItem(editTodo.categoryId, editTodo.text)}
             onDelete={() => {
               closeSheet();

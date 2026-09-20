@@ -72,6 +72,8 @@ export const todos = sqliteTable(
     dueDate: text("due_date"),
     done: integer("done").notNull().default(0),
     doneAtMs: integer("done_at_ms"),
+    // 0 = low, 1 = medium, 2 = high. Orders each bucket, highest first.
+    priority: integer("priority").notNull().default(1),
     sortOrder: integer("sort_order").notNull().default(0),
     updatedAtMs: integer("updated_at_ms").notNull(),
     deletedAtMs: integer("deleted_at_ms"),

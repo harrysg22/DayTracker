@@ -21,6 +21,7 @@ export function TodoSheet(props: {
   onChangeText: (text: string) => void;
   onChangeCategory: (categoryId: string | null) => void;
   onChangeDueDate: (dueDate: string | null) => void;
+  onChangePriority: (priority: 0 | 1 | 2) => void;
   onStartTimer: () => void;
   onDelete: () => void;
   onDone: () => void;
@@ -101,6 +102,26 @@ export function TodoSheet(props: {
             </Pressable>
           );
         })()}
+      </View>
+
+      <Text style={[styles.kicker, { color: theme.text3 }]}>PRIORITY</Text>
+      <View style={[styles.segment, { backgroundColor: theme.surface2 }]}>
+        {([
+          [0, 'Low'],
+          [1, 'Medium'],
+          [2, 'High'],
+        ] as const).map(([value, label]) => {
+          const on = todo.priority === value;
+          return (
+            <Pressable
+              key={value}
+              onPress={() => props.onChangePriority(value)}
+              style={[styles.segmentItem, on && { backgroundColor: theme.text }]}
+            >
+              <Text style={[styles.segmentLabel, { color: on ? theme.bg : theme.text2 }]}>{label}</Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       {props.canStartTimer && !!category && todo.done === 0 && (

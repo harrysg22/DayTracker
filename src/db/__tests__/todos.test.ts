@@ -167,4 +167,47 @@ describe("todoLayer", () => {
     expect(row.done).toBe(1);
     expect(row.dueDate).toBeNull();
   });
+
+  test("create sin priority queda en medium (1) por defecto", async () => {
+    const tl = createTodoLayer(ctx.db as any, makeDeps());
+    const t = await tl.create(input);
+    expect(t.priority).toBe(1);
+  });
+
+  test("listBacklog ordena por prioridad (alta primero) antes que por sortOrder", async () => {
+    const tl = createTodoLayer(ctx.db as any, makeDeps());
+    const low = await tl.create({ text: "Baja", priority: 0 });
+    const high = await tl.create({ text: "Alta", priority: 2 }); // creado después, pero prioridad manda
+    const medium = await tl.create({ text: "Media", priority: 1 });
+
+    const rows = await tl.listBacklog();
+    expect(rows.map((r) => r.id)).toEqual([high.id, medium.id, low.id]);
+  });
+
+  test("listByDateRange ordena por prioridad dentro del mismo día", async () => {
+    const tl = createTodoLayer(ctx.db as any, makeDeps());
+    const low = await tl.create({ text: "Baja", dueDate: "2024-03-10", priority: 0 });
+    const high = await tl.create({ text: "Alta", dueDate: "2024-03-10", priority: 2 });
+
+    const rows = await tl.listByDateRange("2024-03-01", "2024-03-31");
+    expect(rows.map((r) => r.id)).toEqual([high.id, low.id]);
+  });
+
+  test("listOverdue ordena por prioridad dentro de la misma fecha vencida", async () => {
+    const tl = createTodoLayer(ctx.db as any, makeDeps());
+    const low = await tl.create({ text: "Baja", dueDate: "2024-03-01", priority: 0 });
+    const high = await tl.create({ text: "Alta", dueDate: "2024-03-01", priority: 2 });
+
+    const rows = await tl.listOverdue("2024-03-10");
+    expect(rows.map((r) => r.id)).toEqual([high.id, low.id]);
+  });
+
+  test("update cambia priority sin tocar el resto de campos", async () => {
+    const tl = createTodoLayer(ctx.db as any, makeDeps());
+    const t = await tl.create(input);
+
+    const updated = await tl.update(t.id, { priority: 2 });
+    expect(updated.priority).toBe(2);
+    expect(updated.text).toBe(input.text);
+  });
 });

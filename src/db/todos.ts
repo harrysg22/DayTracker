@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, isNull, lt, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, lt, lte } from 'drizzle-orm';
 import type { AnyDb, DataLayerDeps } from './dataLayer';
 import { defaultDeps } from './dataLayer';
 import { NotFoundError } from './errors';
@@ -17,11 +17,16 @@ import type { Todo } from './schema';
  *  2. "Overdue" es una consulta (`dueDate < today AND done = 0`), no un job que
  *     reescribe fechas. La intención original del usuario es dato.
  */
+/** 0 = low, 1 = medium (default), 2 = high. */
+export type TodoPriority = 0 | 1 | 2;
+
 export interface CreateTodoInput {
   text: string;
   /** Omitir o pasar null = Backlog (sin fecha). */
   dueDate?: string | null;
   categoryId?: string | null;
+  /** Por defecto, medium. */
+  priority?: TodoPriority;
 }
 
 export interface UpdateTodoPatch {
@@ -29,6 +34,7 @@ export interface UpdateTodoPatch {
   categoryId?: string | null;
   /** null a propósito = mover a Backlog. */
   dueDate?: string | null;
+  priority?: TodoPriority;
   sortOrder?: number;
 }
 
@@ -52,7 +58,7 @@ export function createTodoLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
       .select()
       .from(todos)
       .where(and(notDeleted, gte(todos.dueDate, from), lte(todos.dueDate, to)))
-      .orderBy(asc(todos.dueDate), asc(todos.done), asc(todos.sortOrder))) as Todo[];
+      .orderBy(asc(todos.dueDate), asc(todos.done), desc(todos.priority), asc(todos.sortOrder))) as Todo[];
   }
 
   /** Sin terminar y con fecha anterior a hoy. */
@@ -61,7 +67,7 @@ export function createTodoLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
       .select()
       .from(todos)
       .where(and(notDeleted, lt(todos.dueDate, today), eq(todos.done, 0)))
-      .orderBy(asc(todos.dueDate), asc(todos.sortOrder))) as Todo[];
+      .orderBy(asc(todos.dueDate), desc(todos.priority), asc(todos.sortOrder))) as Todo[];
   }
 
   /** Sin fecha: el usuario decidió no comprometerse a un día. */
@@ -70,7 +76,7 @@ export function createTodoLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
       .select()
       .from(todos)
       .where(and(notDeleted, isNull(todos.dueDate)))
-      .orderBy(asc(todos.done), asc(todos.sortOrder))) as Todo[];
+      .orderBy(asc(todos.done), desc(todos.priority), asc(todos.sortOrder))) as Todo[];
   }
 
   async function create(input: CreateTodoInput): Promise<Todo> {
@@ -82,6 +88,7 @@ export function createTodoLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
       dueDate: input.dueDate ?? null,
       done: 0,
       doneAtMs: null,
+      priority: input.priority ?? 1,
       // El orden de inserción ES el orden de la lista: monótono y estable.
       sortOrder: now,
       updatedAtMs: now,
@@ -104,6 +111,7 @@ export function createTodoLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
       dueDate: Object.prototype.hasOwnProperty.call(patch, 'dueDate')
         ? patch.dueDate ?? null
         : existing.dueDate,
+      priority: patch.priority ?? existing.priority,
       sortOrder: patch.sortOrder ?? existing.sortOrder,
       updatedAtMs,
     };

@@ -41,7 +41,10 @@ export function TodoScreen(props: {
   // props.todos viene de listByDateRange: nunca null.
   const overdue = props.todos
     .filter((t) => t.done === 0 && t.dueDate! < today)
-    .sort((a, b) => a.dueDate!.localeCompare(b.dueDate!) || a.sortOrder - b.sortOrder);
+    .sort(
+      (a, b) =>
+        a.dueDate!.localeCompare(b.dueDate!) || b.priority - a.priority || a.sortOrder - b.sortOrder
+    );
 
   const dates = [today, shiftLocalDate(today, 1), shiftLocalDate(today, 2)];
 
@@ -74,8 +77,11 @@ export function TodoScreen(props: {
     const late = todo.dueDate != null && todo.dueDate < today && todo.done === 0;
     const dotColor = category?.color ?? theme.text3;
     const n = late ? daysLate(todo.dueDate!) : 0;
+    const priorityTag = todo.priority === 2 ? 'High · ' : todo.priority === 0 ? 'Low · ' : '';
     const meta =
-      label(todo.categoryId) + (late ? (n === 1 ? ' · from yesterday' : ` · ${n}d late`) : '');
+      priorityTag +
+      label(todo.categoryId) +
+      (late ? (n === 1 ? ' · from yesterday' : ` · ${n}d late`) : '');
     return (
       <View
         key={todo.id}
