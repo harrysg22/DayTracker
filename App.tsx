@@ -365,6 +365,10 @@ export default function App() {
                 showToast('Future days are read-only');
                 return;
               }
+              if (categories.length === 0) {
+                showToast('Create a category first');
+                return;
+              }
               // Today: a 30-minute block ending about now — or, if a timer is
               // running, ending right when it started (that gap is usually
               // the forgotten activity, and "now" would always overlap the
