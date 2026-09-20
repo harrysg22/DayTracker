@@ -46,6 +46,14 @@ function stepMonth(localDate: string, delta: number): string {
   return dateString(target.getUTCFullYear(), target.getUTCMonth(), target.getUTCDate());
 }
 
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}
+
 /**
  * Calendar. Un solo selector con tres vistas sobre los mismos datos:
  *
@@ -253,46 +261,55 @@ export function CalendarScreen(props: {
               </Pressable>
             </View>
 
-            <View style={styles.monthGrid}>
+            <View style={styles.monthDowRow}>
               {DOW.map((d) => (
                 <View key={d} style={styles.monthCell}>
                   <Text style={[styles.monthDow, { color: theme.text3 }]}>{d[0]}</Text>
                 </View>
               ))}
-              {Array.from({ length: Math.ceil((month.lead + month.days) / 7) * 7 }).map((_, i) => {
-                const dayNumber = i - month.lead + 1;
-                if (dayNumber < 1 || dayNumber > month.days) {
-                  return <View key={`blank-${i}`} style={styles.monthCell} />;
-                }
-                const date = dateString(month.year, month.month, dayNumber);
-                const on = date === selectedDate;
-                const isToday = date === today;
-                return (
-                  <Pressable
-                    key={date}
-                    onPress={() => props.onSelectDate(date)}
-                    style={[
-                      styles.monthCell,
-                      styles.monthCellActive,
-                      on
-                        ? { backgroundColor: theme.text }
-                        : isToday
-                        ? { backgroundColor: theme.surface2 }
-                        : null,
-                    ]}
-                  >
-                    <Text
+            </View>
+            <View style={styles.monthGrid}>
+              {chunk(
+                Array.from({ length: Math.ceil((month.lead + month.days) / 7) * 7 }, (_, i) => {
+                  const dayNumber = i - month.lead + 1;
+                  if (dayNumber < 1 || dayNumber > month.days) {
+                    return <View key={`blank-${i}`} style={styles.monthCell} />;
+                  }
+                  const date = dateString(month.year, month.month, dayNumber);
+                  const on = date === selectedDate;
+                  const isToday = date === today;
+                  return (
+                    <Pressable
+                      key={date}
+                      onPress={() => props.onSelectDate(date)}
                       style={[
-                        styles.monthNum,
-                        { color: on ? theme.bg : isToday ? theme.text : theme.text2 },
+                        styles.monthCell,
+                        styles.monthCellActive,
+                        on
+                          ? { backgroundColor: theme.text }
+                          : isToday
+                          ? { backgroundColor: theme.surface2 }
+                          : null,
                       ]}
                     >
-                      {dayNumber}
-                    </Text>
-                    <View style={styles.dotRow}>{dots(date, on)}</View>
-                  </Pressable>
-                );
-              })}
+                      <Text
+                        style={[
+                          styles.monthNum,
+                          { color: on ? theme.bg : isToday ? theme.text : theme.text2 },
+                        ]}
+                      >
+                        {dayNumber}
+                      </Text>
+                      <View style={styles.dotRow}>{dots(date, on)}</View>
+                    </Pressable>
+                  );
+                }),
+                7
+              ).map((week, weekIndex) => (
+                <View key={weekIndex} style={styles.monthWeekRow}>
+                  {week}
+                </View>
+              ))}
             </View>
           </View>
         )}
@@ -443,7 +460,6 @@ export function CalendarScreen(props: {
           <TextInput
             value={title}
             onChangeText={setTitle}
-            onSubmitEditing={save}
             returnKeyType="done"
             placeholder="Cena con Ana"
             placeholderTextColor={theme.text3}
@@ -553,7 +569,9 @@ const styles = StyleSheet.create({
   monthNav: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   monthNavLabel: { fontSize: 14, fontWeight: '600' },
   monthLabel: { flex: 1, textAlign: 'center', fontSize: 13.5, fontWeight: '600' },
-  monthGrid: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap' },
+  monthDowRow: { marginTop: 12, flexDirection: 'row' },
+  monthGrid: { flexDirection: 'column' },
+  monthWeekRow: { flexDirection: 'row' },
   monthCell: { width: `${100 / 7}%`, paddingTop: 6, paddingBottom: 4, alignItems: 'center', gap: 4 },
   monthCellActive: { borderRadius: 10 },
   monthDow: { fontSize: 9.5, fontWeight: '600', letterSpacing: 0.4 },
