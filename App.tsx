@@ -175,7 +175,11 @@ export default function App() {
         if (successMessage) showToast(successMessage);
       } catch (err) {
         if (err instanceof OverlapError) {
-          showToast('That time overlaps another entry — adjust it first', 2400);
+          const msg =
+            err.conflicting.endedAtMs === null
+              ? 'That overlaps your running timer — stop it or pick a different time'
+              : 'That time overlaps another entry — adjust it first';
+          showToast(msg, 2400);
         } else {
           showToast((err as Error).message ?? 'Something went wrong', 2600);
         }
@@ -361,17 +365,21 @@ export default function App() {
                 showToast('Future days are read-only');
                 return;
               }
-              // Today: a 30-minute block ending about now. Past days: 9:00 AM.
+              // Today: a 30-minute block ending about now — or, if a timer is
+              // running, ending right when it started (that gap is usually
+              // the forgotten activity, and "now" would always overlap the
+              // still-open timer). Past days: 9:00 AM.
+              const todayEnd = timer ? timer.startedAtMs : nowMs;
               const base = snapMs(
                 localDate === today
-                  ? nowMs - 30 * 60_000
+                  ? todayEnd - 30 * 60_000
                   : localMidnightMs(localDate) + 540 * 60_000 + tzOffsetMin * 60_000
               );
               void run(async () => {
                 const created = await dataLayer.createEntry({
                   categoryId: (categories.find((c) => c.archived === 0) ?? categories[0]).id,
                   startedAtMs: base,
-                  endedAtMs: base + 30 * 60_000,
+                  endedAtMs: localDate === today ? todayEnd : base + 30 * 60_000,
                 });
                 setEditEntryId(created.id);
                 setSheet('entry');
