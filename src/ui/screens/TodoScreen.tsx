@@ -18,6 +18,8 @@ const DOW_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satur
 export function TodoScreen(props: {
   /** Todo lo relevante: vencidos + los tres días. Sin filtrar. */
   todos: Todo[];
+  /** To-dos sin fecha: sección Backlog al final. */
+  backlog: Todo[];
   today: string;
   categoriesById: Record<string, Category>;
   theme: Theme;
@@ -27,26 +29,33 @@ export function TodoScreen(props: {
   onToggleShowDone: () => void;
   onToggleDone: (todo: Todo) => void;
   onOpenTodo: (todo: Todo) => void;
-  onCreate: (text: string, dueDate: string) => void;
+  onCreate: (text: string, dueDate: string | null) => void;
   onStartTimer: (todo: Todo) => void;
 }) {
   const { theme, today } = props;
-  // Qué sección tiene el input abierto (su dueDate), y qué se está escribiendo.
-  const [addingDate, setAddingDate] = useState<string | null>(null);
+  // Qué sección tiene el input abierto (su key), y qué se está escribiendo.
+  const [addingKey, setAddingKey] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
 
-  const doneCount = props.todos.filter((t) => t.done === 1).length;
+  const doneCount = props.todos.filter((t) => t.done === 1).length + props.backlog.filter((t) => t.done === 1).length;
+  // props.todos viene de listByDateRange: nunca null.
   const overdue = props.todos
-    .filter((t) => t.done === 0 && t.dueDate < today)
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.sortOrder - b.sortOrder);
+    .filter((t) => t.done === 0 && t.dueDate! < today)
+    .sort((a, b) => a.dueDate!.localeCompare(b.dueDate!) || a.sortOrder - b.sortOrder);
 
   const dates = [today, shiftLocalDate(today, 1), shiftLocalDate(today, 2)];
 
-  const commit = (dueDate: string, keepOpen: boolean) => {
+  const backlogOpen = props.backlog.filter((t) => t.done === 0);
+  const backlogDone = props.backlog.filter((t) => t.done === 1);
+  const backlogRows = props.showDone ? [...backlogOpen, ...backlogDone] : backlogOpen;
+  const backlogMeta =
+    backlogOpen.length > 0 ? `${backlogOpen.length} left` : backlogDone.length > 0 ? 'all done' : 'nothing yet';
+
+  const commit = (addTarget: string | null, keepOpen: boolean) => {
     const value = draft.trim();
-    if (value) props.onCreate(value, dueDate);
+    if (value) props.onCreate(value, addTarget);
     setDraft('');
-    if (!keepOpen) setAddingDate(null);
+    if (!keepOpen) setAddingKey(null);
   };
 
   const label = (categoryId: string | null): string => {
@@ -62,9 +71,9 @@ export function TodoScreen(props: {
 
   const renderRow = (todo: Todo, isLast: boolean) => {
     const category = todo.categoryId ? props.categoriesById[todo.categoryId] : null;
-    const late = todo.dueDate < today && todo.done === 0;
+    const late = todo.dueDate != null && todo.dueDate < today && todo.done === 0;
     const dotColor = category?.color ?? theme.text3;
-    const n = daysLate(todo.dueDate);
+    const n = late ? daysLate(todo.dueDate!) : 0;
     const meta =
       label(todo.categoryId) + (late ? (n === 1 ? ' · from yesterday' : ` · ${n}d late`) : '');
     return (
@@ -131,9 +140,10 @@ export function TodoScreen(props: {
     titleColor: string,
     meta: string,
     rows: Todo[],
-    dueDate: string | null
+    opts: { addTarget: string | null; addable: boolean }
   ) => {
-    const adding = dueDate !== null && addingDate === dueDate;
+    const { addTarget, addable } = opts;
+    const adding = addable && addingKey === key;
     return (
       <View key={key} style={{ marginBottom: 20 }}>
         <View style={styles.sectionHead}>
@@ -141,7 +151,7 @@ export function TodoScreen(props: {
           <Text style={[styles.sectionMeta, { color: theme.text3 }]}>{meta}</Text>
         </View>
         <View style={[styles.card, { backgroundColor: theme.surface }]}>
-          {rows.map((t, i) => renderRow(t, dueDate === null && i === rows.length - 1))}
+          {rows.map((t, i) => renderRow(t, !addable && i === rows.length - 1))}
 
           {adding && (
             <View style={styles.row}>
@@ -150,8 +160,8 @@ export function TodoScreen(props: {
                 autoFocus
                 value={draft}
                 onChangeText={setDraft}
-                onSubmitEditing={() => commit(dueDate!, true)}
-                onBlur={() => commit(dueDate!, false)}
+                onSubmitEditing={() => commit(addTarget, true)}
+                onBlur={() => commit(addTarget, false)}
                 blurOnSubmit={false}
                 returnKeyType="done"
                 placeholder="What needs doing?"
@@ -161,11 +171,11 @@ export function TodoScreen(props: {
             </View>
           )}
 
-          {dueDate !== null && !adding && (
+          {addable && !adding && (
             <Pressable
               onPress={() => {
                 setDraft('');
-                setAddingDate(dueDate);
+                setAddingKey(key);
               }}
               style={styles.row}
             >
@@ -206,7 +216,7 @@ export function TodoScreen(props: {
             theme.warn,
             `${overdue.length} left undone`,
             overdue,
-            null
+            { addTarget: null, addable: false }
           )}
 
         {dates.map((date, i) => {
@@ -219,7 +229,12 @@ export function TodoScreen(props: {
             fmtShortDate(date) +
             ' · ' +
             (open.length > 0 ? `${open.length} left` : done.length > 0 ? 'all done' : 'nothing yet');
-          return renderSection(date, title, theme.text, meta, rows, date);
+          return renderSection(date, title, theme.text, meta, rows, { addTarget: date, addable: true });
+        })}
+
+        {renderSection('backlog', 'Backlog', theme.text, backlogMeta, backlogRows, {
+          addTarget: null,
+          addable: true,
         })}
 
         <Text style={[styles.footnote, { color: theme.text3 }]}>

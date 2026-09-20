@@ -4,6 +4,7 @@ import type { Category, Entry } from '../../db/schema';
 import { fmt12, fmtDuration, minutesIntoLocalDay } from '../format';
 import { GEO, MONO, inkOn } from '../theme';
 import type { Theme } from '../theme';
+import { TimeWheelSheet } from '../components/TimeWheelSheet';
 
 /**
  * Duration is shown as computed, never editable — it is always end − start.
@@ -15,8 +16,10 @@ export function EntryEditSheet(props: {
   categories: Category[];
   nowMs: number;
   theme: Theme;
+  themeVariant: 'light' | 'dark';
   onChangeCategory: (categoryId: string) => void;
   onNudge: (edge: 'start' | 'end', deltaMinutes: number) => void;
+  onSetAbsolute: (edge: 'start' | 'end', minutes: number) => void;
   onChangeNote: (note: string | null) => void;
   onSplit: () => void;
   onDelete: () => void;
@@ -24,6 +27,7 @@ export function EntryEditSheet(props: {
 }) {
   const { entry, theme } = props;
   const [note, setNote] = useState(entry.note ?? '');
+  const [pickerField, setPickerField] = useState<'start' | 'end' | null>(null);
   const category = props.categories.find((c) => c.id === entry.categoryId);
   const live = entry.endedAtMs === null;
 
@@ -79,7 +83,9 @@ export function EntryEditSheet(props: {
             >
               <Text style={[styles.stepperSign, { color: theme.text }]}>−</Text>
             </Pressable>
-            <Text style={[styles.stepperValue, { color: theme.text }]}>{s.value}</Text>
+            <Pressable onPress={() => setPickerField(s.edge)} hitSlop={4}>
+              <Text style={[styles.stepperValue, { color: theme.text }]}>{s.value}</Text>
+            </Pressable>
             <Pressable
               onPress={() => props.onNudge(s.edge, GEO.stepMinutes)}
               style={[styles.stepperBtn, { backgroundColor: theme.surface }]}
@@ -92,12 +98,12 @@ export function EntryEditSheet(props: {
           5-minute steps · hold a block in the calendar to drag its edges instead.
         </Text>
 
-        <Text style={[styles.eyebrow, { color: theme.text3 }]}>Note</Text>
+        <Text style={[styles.eyebrow, { color: theme.text3 }]}>Target</Text>
         <TextInput
           value={note}
           onChangeText={setNote}
           onEndEditing={() => props.onChangeNote(note.trim() || null)}
-          placeholder="optional — what was this?"
+          placeholder="optional — what are you aiming to do?"
           placeholderTextColor={theme.text3}
           style={[styles.input, { backgroundColor: theme.surface2, borderColor: theme.line, color: theme.text }]}
         />
@@ -114,6 +120,24 @@ export function EntryEditSheet(props: {
           <Text style={[styles.primaryLabel, { color: theme.bg }]}>Done</Text>
         </Pressable>
       </ScrollView>
+
+      <TimeWheelSheet
+        visible={pickerField !== null}
+        label={pickerField === 'start' ? 'Starts' : 'Ends'}
+        minutes={
+          pickerField === 'start'
+            ? startMin
+            : live
+            ? minutesIntoLocalDay(props.nowMs, entry.tzOffsetMin, entry.localDate)
+            : endMin
+        }
+        themeVariant={props.themeVariant}
+        theme={theme}
+        onClose={() => setPickerField(null)}
+        onCommit={(m) => {
+          if (pickerField) props.onSetAbsolute(pickerField, m);
+        }}
+      />
     </View>
   );
 }

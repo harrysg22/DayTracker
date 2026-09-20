@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, isNull, lte } from 'drizzle-orm';
+import { and, asc, eq, gte, isNotNull, isNull, lte } from 'drizzle-orm';
 import type { AnyDb, DataLayerDeps } from './dataLayer';
 import { defaultDeps } from './dataLayer';
 import { NotFoundError } from './errors';
@@ -38,6 +38,12 @@ export interface CreateEventInput {
   categoryId?: string | null;
   note?: string | null;
   tzOffsetMin?: number;
+  /**
+   * Solo lo usa el motor de sincronización al importar un evento del calendario
+   * del sistema: nace ya enlazado y "limpio". La UI nunca pasa estos campos.
+   */
+  calendarEventId?: string | null;
+  calendarSyncedMs?: number | null;
 }
 
 export interface UpdateEventPatch {
@@ -91,6 +97,8 @@ export function createEventLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
       durationMinutes: clampDuration(input.durationMinutes),
       tzOffsetMin: input.tzOffsetMin ?? deps.getTzOffsetMin(),
       note: input.note ?? null,
+      calendarEventId: input.calendarEventId ?? null,
+      calendarSyncedMs: input.calendarSyncedMs ?? null,
       updatedAtMs: now,
       deletedAtMs: null,
     };
@@ -136,6 +144,45 @@ export function createEventLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
     return Date.UTC(y, m - 1, d) + event.startMinute * 60_000 + event.tzOffsetMin * 60_000;
   }
 
+  // ── Sincronización con el calendario del sistema ────────────────────────────
+  // Estas tres no pasan por getOrThrow ni tocan updatedAtMs: solo mueven el
+  // enlace con EventKit, sin "ensuciar" la fila.
+
+  /**
+   * Eventos ya borrados (soft) que siguen enlazados a un evento del sistema:
+   * el motor de sync los usa para propagar el borrado y luego llama a
+   * `unlinkCalendarEvent`.
+   */
+  async function listDeletedWithCalendarId(from: string, to: string): Promise<PlanEvent[]> {
+    return (await db
+      .select()
+      .from(events)
+      .where(
+        and(
+          isNotNull(events.deletedAtMs),
+          isNotNull(events.calendarEventId),
+          gte(events.localDate, from),
+          lte(events.localDate, to)
+        )
+      )) as PlanEvent[];
+  }
+
+  /** Fija el id del evento del sistema y/o la marca de "sincronizado hasta". */
+  async function setCalendarLink(
+    id: string,
+    patch: { calendarEventId?: string; calendarSyncedMs?: number }
+  ): Promise<void> {
+    await db.update(events).set(patch).where(eq(events.id, id));
+  }
+
+  /** Rompe el enlace con el sistema (tras propagar un borrado). */
+  async function unlinkCalendarEvent(id: string): Promise<void> {
+    await db
+      .update(events)
+      .set({ calendarEventId: null, calendarSyncedMs: null })
+      .where(eq(events.id, id));
+  }
+
   return {
     getEvent: getOrThrow,
     listByDate,
@@ -145,6 +192,9 @@ export function createEventLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
     softDelete,
     clearCategory,
     startUtcMs,
+    listDeletedWithCalendarId,
+    setCalendarLink,
+    unlinkCalendarEvent,
   };
 }
 

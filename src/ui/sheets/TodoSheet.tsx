@@ -20,7 +20,7 @@ export function TodoSheet(props: {
   canStartTimer: boolean;
   onChangeText: (text: string) => void;
   onChangeCategory: (categoryId: string | null) => void;
-  onChangeDueDate: (dueDate: string) => void;
+  onChangeDueDate: (dueDate: string | null) => void;
   onStartTimer: () => void;
   onDelete: () => void;
   onDone: () => void;
@@ -89,6 +89,18 @@ export function TodoSheet(props: {
             </Pressable>
           );
         })}
+        {(() => {
+          const on = todo.dueDate === null;
+          return (
+            <Pressable
+              key="backlog"
+              onPress={() => props.onChangeDueDate(null)}
+              style={[styles.segmentItem, on && { backgroundColor: theme.text }]}
+            >
+              <Text style={[styles.segmentLabel, { color: on ? theme.bg : theme.text2 }]}>Backlog</Text>
+            </Pressable>
+          );
+        })()}
       </View>
 
       {props.canStartTimer && !!category && todo.done === 0 && (

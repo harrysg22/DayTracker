@@ -55,6 +55,23 @@ describe("dataLayer", () => {
     expect(await dl.getActiveTimer()).toBeNull();
   });
 
+  test("startTimer guarda el target inicial en note", async () => {
+    const deps = makeDeps();
+    const dl = createDataLayer(ctx.db as any, deps);
+    const cat = await dl.createCategory({ name: "Trabajo", color: "#000" });
+
+    const withTarget = await dl.startTimer(cat.id, { note: "leer capítulo 3" });
+    expect(withTarget.note).toBe("leer capítulo 3");
+    expect((await dl.getActiveTimer())?.note).toBe("leer capítulo 3");
+
+    deps.advance(60_000);
+    await dl.stopTimer();
+
+    // Sin opts el note queda en null, como antes.
+    const plain = await dl.startTimer(cat.id);
+    expect(plain.note).toBeNull();
+  });
+
   test("startTimer lanza si ya hay uno activo", async () => {
     const deps = makeDeps();
     const dl = createDataLayer(ctx.db as any, deps);

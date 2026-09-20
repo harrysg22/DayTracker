@@ -68,7 +68,8 @@ export const todos = sqliteTable(
     // Nullable a propósito: un to-do puede existir sin categoría.
     categoryId: text("category_id").references(() => categories.id),
     // 'YYYY-MM-DD' — fecha de pared. Nunca un offset relativo, nunca epoch.
-    dueDate: text("due_date").notNull(),
+    // Nullable a propósito: sin fecha = "Backlog", vive fuera de los 3 días fijos.
+    dueDate: text("due_date"),
     done: integer("done").notNull().default(0),
     doneAtMs: integer("done_at_ms"),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -97,6 +98,13 @@ export const events = sqliteTable(
     // dateUtils: Bogotá = +300.
     tzOffsetMin: integer("tz_offset_min").notNull(),
     note: text("note"),
+    // Sincronización con el calendario del sistema (expo-calendar / EventKit).
+    // `calendarEventId` NULL = nunca subido a un calendario. `calendarSyncedMs`
+    // guarda el `updatedAtMs` de la última reconciliación correcta: la fila está
+    // "sucia" (cambiada localmente desde la última sync) si
+    // `updatedAtMs > calendarSyncedMs` o `calendarSyncedMs IS NULL`.
+    calendarEventId: text("calendar_event_id"),
+    calendarSyncedMs: integer("calendar_synced_ms"),
     updatedAtMs: integer("updated_at_ms").notNull(),
     deletedAtMs: integer("deleted_at_ms"),
   },
@@ -104,6 +112,9 @@ export const events = sqliteTable(
     index("idx_events_date")
       .on(table.localDate, table.startMinute)
       .where(sql`${table.deletedAtMs} is null`),
+    index("idx_events_calendar")
+      .on(table.calendarEventId)
+      .where(sql`${table.calendarEventId} is not null`),
   ]
 );
 

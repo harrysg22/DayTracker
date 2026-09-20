@@ -12,6 +12,41 @@ import type { Theme } from '../theme';
  * The comparison is period-aligned: three elapsed days of this week are
  * measured against the same three days of last week, never a full week.
  */
+function monthDay(localDate: string): string {
+  const d = new Date(localMidnightMs(localDate));
+  return MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate();
+}
+
+function rangeLabel(range: RangeKind, offset: number, startDate: string, endDate: string): string {
+  if (range === 'day') {
+    if (offset === 0) return 'Today';
+    if (offset === 1) return 'Yesterday';
+    return monthDay(startDate);
+  }
+  if (range === 'week') {
+    if (offset === 0) return 'This week';
+    if (offset === 1) return 'Last week';
+    return monthDay(startDate) + ' – ' + monthDay(endDate);
+  }
+  if (offset === 0) return 'This month';
+  if (offset === 1) return 'Last month';
+  const d = new Date(localMidnightMs(startDate));
+  return MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+}
+
+function HeaderButton(props: { theme: Theme; label: string; onPress: () => void; disabled?: boolean }) {
+  return (
+    <Pressable
+      onPress={props.disabled ? undefined : props.onPress}
+      disabled={props.disabled}
+      style={[styles.headerBtn, { backgroundColor: props.theme.surface, opacity: props.disabled ? 0.35 : 1 }]}
+      hitSlop={6}
+    >
+      <Text style={[styles.headerBtnLabel, { color: props.theme.text2 }]}>{props.label}</Text>
+    </Pressable>
+  );
+}
+
 export function InsightsScreen(props: {
   range: RangeKind;
   onChangeRange: (r: RangeKind) => void;
@@ -22,8 +57,11 @@ export function InsightsScreen(props: {
   tzOffsetMin: number;
   theme: Theme;
   onPressCategory: (categoryId: string) => void;
+  periodOffset: number;
+  onChangeOffset: (offset: number) => void;
 }) {
   const { range, theme, today } = props;
+  const isCurrent = props.periodOffset === 0;
 
   const cmp = useMemo(
     () =>
@@ -33,8 +71,9 @@ export function InsightsScreen(props: {
         entries: props.entries,
         nowMs: props.nowMs,
         tzOffsetMin: props.tzOffsetMin,
+        periodOffset: props.periodOffset,
       }),
-    [range, today, props.entries, props.tzOffsetMin, Math.floor(props.nowMs / 60_000)]
+    [range, today, props.entries, props.tzOffsetMin, props.periodOffset, Math.floor(props.nowMs / 60_000)]
   );
   const rows = useMemo(() => categoryRows(cmp), [cmp]);
 
@@ -42,7 +81,9 @@ export function InsightsScreen(props: {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
 
-  const periodWord = range === 'day' ? 'yesterday' : range === 'week' ? 'the same days last week' : 'the same stretch last month';
+  const periodWord = isCurrent
+    ? range === 'day' ? 'yesterday' : range === 'week' ? 'the same days last week' : 'the same stretch last month'
+    : range === 'day' ? 'the day before' : range === 'week' ? 'the week before' : 'the month before';
   const pct = cmp.percentDelta;
   const headline = !cmp.hasEnoughHistory
     ? 'Not enough history yet'
@@ -57,15 +98,21 @@ export function InsightsScreen(props: {
       (pct! > 0 ? 'more' : 'less') +
       ' · ' +
       fmtDuration(cmp.previous!.totalMinutes) +
-      ' by this point ' +
-      (range === 'day' ? 'yesterday' : range === 'week' ? 'last week' : 'last month');
+      (isCurrent
+        ? ' by this point ' + (range === 'day' ? 'yesterday' : range === 'week' ? 'last week' : 'last month')
+        : ' ' + (range === 'day' ? 'the day before' : range === 'week' ? 'the week before' : 'the month before'));
 
-  const kicker =
-    range === 'day'
+  const kicker = isCurrent
+    ? range === 'day'
       ? 'Today · tracked'
       : range === 'week'
       ? 'This week · Mon–today'
-      : MONTHS[new Date(localMidnightMs(today)).getUTCMonth()] + ' · so far';
+      : MONTHS[new Date(localMidnightMs(today)).getUTCMonth()] + ' · so far'
+    : range === 'day'
+    ? 'Tracked'
+    : range === 'week'
+    ? 'Full week'
+    : 'Full month';
 
   const trendDays = cmp.current.days;
   const maxDay = Math.max(60, ...trendDays.map((d) => d.totalMinutes));
@@ -91,6 +138,20 @@ export function InsightsScreen(props: {
               </Pressable>
             );
           })}
+        </View>
+        <View style={styles.navRow}>
+          <HeaderButton theme={theme} label="‹" onPress={() => props.onChangeOffset(props.periodOffset + 1)} />
+          <View style={styles.navLabelWrap}>
+            <Text style={[styles.navLabel, { color: theme.text }]}>
+              {rangeLabel(range, props.periodOffset, cmp.current.startDate, cmp.current.endDate)}
+            </Text>
+          </View>
+          <HeaderButton
+            theme={theme}
+            label="›"
+            onPress={() => props.onChangeOffset(props.periodOffset - 1)}
+            disabled={isCurrent}
+          />
         </View>
       </View>
 
@@ -223,6 +284,12 @@ const styles = StyleSheet.create({
   segmented: { flexDirection: 'row', gap: 4, marginTop: 12, padding: 3, borderRadius: RADIUS.chip },
   segment: { flex: 1, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   segmentLabel: { fontSize: 12.5, fontWeight: '600' },
+
+  navRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
+  navLabelWrap: { flex: 1, alignItems: 'center' },
+  navLabel: { fontSize: 14, fontWeight: '600', fontFamily: MONO, fontVariant: ['tabular-nums'] },
+  headerBtn: { width: 34, height: 34, borderRadius: RADIUS.chip, alignItems: 'center', justifyContent: 'center' },
+  headerBtnLabel: { fontSize: 17, fontWeight: '600', lineHeight: 20 },
 
   card: { padding: 18, borderRadius: RADIUS.card },
   cardHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },

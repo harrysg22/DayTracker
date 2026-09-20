@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { Category, PlanEvent } from '../../db/schema';
 import { DOW, MONTHS, fmt12, fmtDuration, fmtShortDate, localMidnightMs, shiftLocalDate } from '../format';
 import { MONO, RADIUS } from '../theme';
 import type { Theme } from '../theme';
+import { TimeWheelSheet } from '../components/TimeWheelSheet';
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
+}
 
 export type CalendarMode = 'day' | 'week' | 'month';
 
@@ -78,30 +83,40 @@ export function CalendarScreen(props: {
   /** Para los chips del formulario: solo activas. */
   categories: Category[];
   theme: Theme;
+  themeVariant: 'light' | 'dark';
   canStartTimer: boolean;
   /** Minutos transcurridos hoy — atenúa lo que ya pasó. */
   nowMinute: number;
   onOpenEvent: (event: PlanEvent) => void;
   onStartTimer: (event: PlanEvent) => void;
+  onGoToday: () => void;
   onCreate: (input: {
     title: string;
     localDate: string;
     startMinute: number;
     durationMinutes: number;
     categoryId: string | null;
+    note: string | null;
   }) => void;
   /** Para avisar "ponle nombre primero" sin inventar un toast propio. */
   onWarn: (message: string) => void;
+  /** Sync con Google Calendar (calendario del sistema). Solo se muestra en iOS. */
+  showSync: boolean;
+  syncing: boolean;
+  /** 1ª vez abre la hoja para elegir calendario; luego sincroniza directo. */
+  onSync: () => void;
 }) {
   const { theme, today, selectedDate } = props;
   const columnsRef = useRef<ScrollView | null>(null);
 
   // ── formulario ────────────────────────────────────────────────────────────
   const [title, setTitle] = useState('');
+  const [note, setNote] = useState('');
   const [draftDate, setDraftDate] = useState(selectedDate);
   const [startMinute, setStartMinute] = useState(9 * 60);
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [draftCategoryId, setDraftCategoryId] = useState<string | null>(null);
+  const [pickerField, setPickerField] = useState<'start' | 'end' | null>(null);
 
   // El formulario sigue al día elegido: elegir un día y escribir es un gesto.
   useEffect(() => setDraftDate(selectedDate), [selectedDate]);
@@ -162,9 +177,11 @@ export function CalendarScreen(props: {
       startMinute,
       durationMinutes,
       categoryId: draftCategoryId,
+      note: note.trim() || null,
     });
     // La hora se queda: apuntar tres cosas a la misma hora es lo normal.
     setTitle('');
+    setNote('');
     setDraftCategoryId(null);
     props.onSelectDate(draftDate);
   };
@@ -186,21 +203,29 @@ export function CalendarScreen(props: {
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <Text style={[styles.screenTitle, { color: theme.text }]}>Calendar</Text>
-          <View style={[styles.segment, { backgroundColor: theme.surface }]}>
-            {(['day', 'week', 'month'] as CalendarMode[]).map((m) => {
-              const on = props.mode === m;
-              return (
-                <Pressable
-                  key={m}
-                  onPress={() => props.onChangeMode(m)}
-                  style={[styles.segmentItem, on && { backgroundColor: theme.text }]}
-                >
-                  <Text style={[styles.segmentLabel, { color: on ? theme.bg : theme.text2 }]}>
-                    {m === 'day' ? 'Day' : m === 'week' ? 'Week' : 'Month'}
-                  </Text>
-                </Pressable>
-              );
-            })}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Pressable
+              onPress={props.onGoToday}
+              style={[styles.pill, { backgroundColor: theme.surface }]}
+            >
+              <Text style={[styles.pillLabel, { color: theme.text2 }]}>Today</Text>
+            </Pressable>
+            <View style={[styles.segment, { backgroundColor: theme.surface }]}>
+              {(['day', 'week', 'month'] as CalendarMode[]).map((m) => {
+                const on = props.mode === m;
+                return (
+                  <Pressable
+                    key={m}
+                    onPress={() => props.onChangeMode(m)}
+                    style={[styles.segmentItem, on && { backgroundColor: theme.text }]}
+                  >
+                    <Text style={[styles.segmentLabel, { color: on ? theme.bg : theme.text2 }]}>
+                      {m === 'day' ? 'Day' : m === 'week' ? 'Week' : 'Month'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
         </View>
 
@@ -454,6 +479,26 @@ export function CalendarScreen(props: {
           </>
         )}
 
+        {props.showSync && (
+          <Pressable
+            onPress={props.syncing ? undefined : props.onSync}
+            disabled={props.syncing}
+            style={[styles.syncBtn, { backgroundColor: theme.surface }]}
+          >
+            {props.syncing ? (
+              <>
+                <ActivityIndicator size="small" color={theme.text2} />
+                <Text style={[styles.syncLabel, { color: theme.text2 }]}>Syncing…</Text>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.syncGlyph, { color: theme.text2 }]}>↻</Text>
+                <Text style={[styles.syncLabel, { color: theme.text }]}>Sync with Google Calendar</Text>
+              </>
+            )}
+          </Pressable>
+        )}
+
         {/* ── New event ───────────────────────────────────────────────────── */}
         <View style={[styles.composer, { backgroundColor: theme.surface }]}>
           <Text style={[styles.kicker, { color: theme.text3 }]}>NEW EVENT</Text>
@@ -461,9 +506,16 @@ export function CalendarScreen(props: {
             value={title}
             onChangeText={setTitle}
             returnKeyType="done"
-            placeholder="Cena con Ana"
+            placeholder="Agregar actividad"
             placeholderTextColor={theme.text3}
             style={[styles.composerInput, { backgroundColor: theme.surface2, color: theme.text }]}
+          />
+          <TextInput
+            value={note}
+            onChangeText={setNote}
+            placeholder="Notas"
+            placeholderTextColor={theme.text3}
+            style={[styles.notesInput, { backgroundColor: theme.surface2, color: theme.text }]}
           />
 
           <View style={[styles.dayChips, { backgroundColor: theme.surface2 }]}>
@@ -486,14 +538,16 @@ export function CalendarScreen(props: {
 
           {[
             {
+              key: 'start' as const,
               label: 'Starts',
               value: fmt12(startMinute),
               down: () => setStartMinute((v) => Math.max(0, v - 15)),
               up: () => setStartMinute((v) => Math.min(1425, v + 15)),
             },
             {
-              label: 'Lasts',
-              value: fmtDuration(durationMinutes),
+              key: 'end' as const,
+              label: 'Ends',
+              value: fmt12(startMinute + durationMinutes),
               down: () => setDurationMinutes((v) => Math.max(15, v - 15)),
               up: () => setDurationMinutes((v) => Math.min(720, v + 15)),
             },
@@ -503,7 +557,9 @@ export function CalendarScreen(props: {
               <Pressable onPress={s.down} hitSlop={4} style={[styles.stepperBtn, { backgroundColor: theme.surface2 }]}>
                 <Text style={[styles.stepperSign, { color: theme.text }]}>−</Text>
               </Pressable>
-              <Text style={[styles.stepperValue, { color: theme.text }]}>{s.value}</Text>
+              <Pressable onPress={() => setPickerField(s.key)} hitSlop={4}>
+                <Text style={[styles.stepperValue, { color: theme.text }]}>{s.value}</Text>
+              </Pressable>
               <Pressable onPress={s.up} hitSlop={4} style={[styles.stepperBtn, { backgroundColor: theme.surface2 }]}>
                 <Text style={[styles.stepperSign, { color: theme.text }]}>+</Text>
               </Pressable>
@@ -546,6 +602,23 @@ export function CalendarScreen(props: {
           track them for real.
         </Text>
       </ScrollView>
+
+      <TimeWheelSheet
+        visible={pickerField !== null}
+        label={pickerField === 'start' ? 'Starts' : 'Ends'}
+        minutes={pickerField === 'start' ? startMinute : startMinute + durationMinutes}
+        themeVariant={props.themeVariant}
+        theme={theme}
+        onClose={() => setPickerField(null)}
+        onCommit={(m) => {
+          if (pickerField === 'start') {
+            setStartMinute(clamp(m, 0, 1425));
+          } else if (pickerField === 'end') {
+            const raw = m - startMinute;
+            setDurationMinutes(clamp(raw <= 0 ? raw + 1440 : raw, 15, 720));
+          }
+        }}
+      />
     </View>
   );
 }
@@ -554,6 +627,8 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingTop: 6, paddingBottom: 10 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   screenTitle: { fontSize: 24, fontWeight: '700', letterSpacing: -0.72 },
+  pill: { height: 32, paddingHorizontal: 13, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  pillLabel: { fontSize: 12, fontWeight: '600' },
   segment: { flexDirection: 'row', gap: 3, padding: 3, borderRadius: 11 },
   segmentItem: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9 },
   segmentLabel: { fontSize: 12, fontWeight: '600' },
@@ -604,9 +679,22 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 13, fontWeight: '600' },
   emptySub: { marginTop: 5, fontSize: 11.5, lineHeight: 16, textAlign: 'center' },
 
-  composer: { marginTop: 20, borderRadius: RADIUS.card, padding: 16 },
+  syncBtn: {
+    marginTop: 20,
+    height: 46,
+    borderRadius: RADIUS.card,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  syncGlyph: { fontSize: 16, fontWeight: '700', marginTop: -1 },
+  syncLabel: { fontSize: 13, fontWeight: '600' },
+
+  composer: { marginTop: 12, borderRadius: RADIUS.card, padding: 16 },
   kicker: { fontSize: 11, fontWeight: '500', letterSpacing: 0.66, textTransform: 'uppercase' },
   composerInput: { marginTop: 11, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, fontWeight: '600' },
+  notesInput: { marginTop: 8, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 13, fontWeight: '500' },
   dayChips: { marginTop: 10, flexDirection: 'row', gap: 3, padding: 3, borderRadius: RADIUS.chip },
   dayChip: { flex: 1, minWidth: 0, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   dayChipLabel: { fontSize: 10.5, fontWeight: '600', fontFamily: MONO, fontVariant: ['tabular-nums'] },

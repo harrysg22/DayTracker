@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Platform, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  calendarSync,
   dataLayer,
   ensureDbReady,
   eventLayer,
@@ -12,6 +13,8 @@ import {
 } from './src/db';
 import { OverlapError } from './src/db/errors';
 import { currentDeviceTzOffsetMin } from './src/db/dateUtils';
+import { nativeCalendarBridge } from './src/calendar/bridge';
+import type { WritableCalendar } from './src/calendar/bridge';
 import type { Category, Entry, PlanEvent, Todo } from './src/db/schema';
 import { Sheet } from './src/ui/components/Sheet';
 import { TabBar } from './src/ui/components/TabBar';
@@ -31,9 +34,10 @@ import {
   useRange,
   useRevision,
   useTodos,
+  useBacklogTodos,
   useToast,
 } from './src/ui/hooks';
-import { fmt12, fmtShortDate, localMidnightMs, minutesIntoLocalDay, shiftLocalDate, snapMs } from './src/ui/format';
+import { fmt12, fmtShortDate, localMidnightMs, minutesIntoLocalDay, shiftLocalDate, snapMs, utcMsFromLocalMinutes } from './src/ui/format';
 import { periodStart } from './src/ui/insights';
 import type { RangeKind } from './src/ui/insights';
 import { DEFAULT_PREFS, loadPrefs, savePrefs } from './src/ui/prefs';
@@ -46,6 +50,7 @@ import { InsightsScreen } from './src/ui/screens/InsightsScreen';
 import { TodoScreen } from './src/ui/screens/TodoScreen';
 import { CategoryEditSheet } from './src/ui/sheets/CategoryEditSheet';
 import type { CategoryDraft } from './src/ui/sheets/CategoryEditSheet';
+import { CalendarSyncSheet } from './src/ui/sheets/CalendarSyncSheet';
 import { CategoryPickerSheet } from './src/ui/sheets/CategoryPickerSheet';
 import { EntryEditSheet } from './src/ui/sheets/EntryEditSheet';
 import { EventSheet } from './src/ui/sheets/EventSheet';
@@ -54,7 +59,7 @@ import { MonthJumpSheet } from './src/ui/sheets/MonthJumpSheet';
 import { TodoSheet } from './src/ui/sheets/TodoSheet';
 import { PALETTE, THEMES } from './src/ui/theme';
 
-type SheetKind = null | 'picker' | 'entry' | 'long' | 'date' | 'category' | 'todo' | 'event';
+type SheetKind = null | 'picker' | 'entry' | 'long' | 'date' | 'category' | 'todo' | 'event' | 'calsync';
 
 export default function App() {
   const [dbReady, setDbReady] = useState(false);
@@ -72,9 +77,32 @@ export default function App() {
   const [recentUse, setRecentUse] = useState<Record<string, number>>({});
   const [calMode, setCalMode] = useState<CalendarMode>('day');
   const [calDate, setCalDate] = useState(() => todayLocalDate());
+  // Cada vez que se entra a la pestaña Week, se para en el día de hoy — no
+  // se queda en la última fecha que se haya navegado ahí.
+  useEffect(() => {
+    if (tab === 'week') setCalDate(todayLocalDate());
+  }, [tab]);
+  const [insightsOffset, setInsightsOffset] = useState(0);
+  useEffect(() => {
+    if (tab === 'insights') setInsightsOffset(0);
+  }, [tab]);
+  useEffect(() => {
+    setInsightsOffset(0);
+  }, [prefs.dashRange]);
   const [showDoneTodos, setShowDoneTodos] = useState(false);
   const [todoId, setTodoId] = useState<string | null>(null);
   const [eventId, setEventId] = useState<string | null>(null);
+
+  // Google Calendar sync (vía calendario del sistema). Todo esto está dormido
+  // hasta que se abre el sheet: no toca nada de lo que ya funciona.
+  const [calSyncPermission, setCalSyncPermission] = useState<'unknown' | 'granted' | 'denied'>('unknown');
+  const [calSyncCalendars, setCalSyncCalendars] = useState<WritableCalendar[]>([]);
+  const [calSyncLoading, setCalSyncLoading] = useState(false);
+  const [calSyncBusy, setCalSyncBusy] = useState(false);
+  // Se resuelve de verdad al abrir el sheet (loadCalSync). No tocamos el módulo
+  // nativo en el arranque: si expo-calendar faltara o fallara, solo se vería
+  // afectado el sheet, nunca el render de la app.
+  const [calSyncSupported, setCalSyncSupported] = useState(Platform.OS === 'ios');
 
   const { revision, invalidate } = useRevision();
   const { message: toastMessage, show: showToast } = useToast();
@@ -106,22 +134,24 @@ export default function App() {
 
   // Medio año atrás cubre cualquier vencido; la tabla es pequeña y va indexada.
   const todos = useTodos(shiftLocalDate(today, -180), shiftLocalDate(today, 2), revision, dbReady);
+  const backlogTodos = useBacklogTodos(revision, dbReady);
   // ±45 días cubre la semana y el mes visibles sin recargar al navegar.
   const events = useEvents(shiftLocalDate(calDate, -45), shiftLocalDate(calDate, 45), revision, dbReady);
 
   const editTodo: Todo | null = useMemo(
-    () => (todoId ? todos.find((t) => t.id === todoId) ?? null : null),
-    [todoId, todos]
+    () =>
+      todoId ? todos.find((t) => t.id === todoId) ?? backlogTodos.find((t) => t.id === todoId) ?? null : null,
+    [todoId, todos, backlogTodos]
   );
   const editEvent: PlanEvent | null = useMemo(
     () => (eventId ? events.find((e) => e.id === eventId) ?? null : null),
     [eventId, events]
   );
 
-  // Insights needs the current period plus the whole previous one.
+  // Insights needs the viewed period plus the whole previous one.
   const insightsFrom = useMemo(
-    () => periodStart(prefs.dashRange, today, 1),
-    [prefs.dashRange, today]
+    () => periodStart(prefs.dashRange, today, insightsOffset + 1),
+    [prefs.dashRange, today, insightsOffset]
   );
   const insightsEntries = useRange(insightsFrom, today, revision, dbReady);
 
@@ -158,6 +188,61 @@ export default function App() {
     if (!editEntryId) return null;
     return dayEntries.find((e) => e.id === editEntryId) ?? (timer?.id === editEntryId ? timer : null);
   }, [editEntryId, dayEntries, timer]);
+
+  const loadCalSync = useCallback(async () => {
+    const supported = nativeCalendarBridge.isSupported();
+    setCalSyncSupported(supported);
+    if (!supported) return;
+    setCalSyncLoading(true);
+    try {
+      const granted = await nativeCalendarBridge.hasPermission();
+      setCalSyncPermission(granted ? 'granted' : 'unknown');
+      setCalSyncCalendars(granted ? await nativeCalendarBridge.listWritableCalendars() : []);
+    } catch {
+      setCalSyncCalendars([]);
+    } finally {
+      setCalSyncLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (sheet === 'calsync') void loadCalSync();
+  }, [sheet, loadCalSync]);
+
+  const requestCalPermission = useCallback(async () => {
+    setCalSyncLoading(true);
+    try {
+      const granted = await nativeCalendarBridge.requestPermission();
+      setCalSyncPermission(granted ? 'granted' : 'denied');
+      setCalSyncCalendars(granted ? await nativeCalendarBridge.listWritableCalendars() : []);
+    } catch {
+      setCalSyncPermission('denied');
+    } finally {
+      setCalSyncLoading(false);
+    }
+  }, []);
+
+  const syncCalendarNow = useCallback(async () => {
+    if (!prefs.calendarSyncId || calSyncBusy) return;
+    setCalSyncBusy(true);
+    try {
+      const r = await calendarSync.run(prefs.calendarSyncId);
+      updatePrefs({ calendarSyncLastMs: Date.now() });
+      invalidate();
+      const toGoogle = r.pushed + r.updatedRemote;
+      const toApp = r.pulled + r.updatedLocal;
+      const removed = r.deletedRemote + r.deletedLocal;
+      const parts: string[] = [];
+      if (toGoogle) parts.push(`${toGoogle}→Google`);
+      if (toApp) parts.push(`${toApp}→app`);
+      if (removed) parts.push(`${removed} removed`);
+      showToast(parts.length ? `Synced · ${parts.join(' · ')}` : 'Already up to date');
+    } catch (err) {
+      showToast((err as Error).message ?? 'Sync failed', 3000);
+    } finally {
+      setCalSyncBusy(false);
+    }
+  }, [prefs.calendarSyncId, calSyncBusy, updatePrefs, invalidate, showToast]);
 
   const timerCategory = timer ? byId[timer.categoryId] ?? null : null;
   const elapsedMinutes = timer ? (nowMs - timer.startedAtMs) / 60_000 : 0;
@@ -313,6 +398,7 @@ export default function App() {
         {tab === 'todo' && (
           <TodoScreen
             todos={todos}
+            backlog={backlogTodos}
             today={today}
             categoriesById={byId}
             theme={theme}
@@ -342,6 +428,7 @@ export default function App() {
             categoriesById={byId}
             categories={categories}
             theme={theme}
+            themeVariant={prefs.theme}
             canStartTimer={!timer}
             nowMinute={nowMinute}
             onOpenEvent={(event) => {
@@ -356,6 +443,13 @@ export default function App() {
               )
             }
             onWarn={(message) => showToast(message)}
+            onGoToday={() => setCalDate(today)}
+            showSync={calSyncSupported}
+            syncing={calSyncBusy}
+            onSync={() => {
+              if (!prefs.calendarSyncId) setSheet('calsync');
+              else void syncCalendarNow();
+            }}
           />
         )}
 
@@ -370,6 +464,8 @@ export default function App() {
             tzOffsetMin={tzOffsetMin}
             theme={theme}
             onPressCategory={(id) => showToast(byId[id]?.name ?? '')}
+            periodOffset={insightsOffset}
+            onChangeOffset={setInsightsOffset}
           />
         )}
 
@@ -387,6 +483,7 @@ export default function App() {
             onExportCSV={() => void run(() => exportCSV(), 'CSV exported')}
             onExportBackup={() => void run(() => exportBackup(), 'Backup saved')}
             onRestoreBackup={() => void run(() => restoreBackup(), 'Backup restored')}
+            onOpenCalendarSync={() => setSheet('calsync')}
           />
         )}
       </View>
@@ -416,16 +513,22 @@ export default function App() {
       <Toast message={toastMessage} theme={theme} />
 
       <Sheet visible={sheet === 'picker'} onClose={closeSheet} theme={theme}>
-        <CategoryPickerSheet
-          categories={categories}
-          recentUse={recentUse}
-          categoriesById={byId}
-          theme={theme}
-          onPick={(categoryId) => {
-            closeSheet();
-            void run(() => dataLayer.startTimer(categoryId), 'Started ' + (byId[categoryId]?.name ?? ''));
-          }}
-        />
+        {sheet === 'picker' && (
+          <CategoryPickerSheet
+            categories={categories}
+            recentUse={recentUse}
+            categoriesById={byId}
+            theme={theme}
+            onPick={(categoryId, target) => {
+              closeSheet();
+              const name = byId[categoryId]?.name ?? '';
+              void run(
+                () => dataLayer.startTimer(categoryId, { note: target || null }),
+                'Started ' + name + (target ? ' · ' + target : '')
+              );
+            }}
+          />
+        )}
       </Sheet>
 
       <Sheet visible={sheet === 'entry' && !!editEntry} onClose={closeSheet} theme={theme}>
@@ -435,6 +538,7 @@ export default function App() {
             categories={categories}
             nowMs={nowMs}
             theme={theme}
+            themeVariant={prefs.theme}
             onChangeCategory={(categoryId) => void run(() => dataLayer.updateEntry(editEntry.id, { categoryId }))}
             onNudge={(edge, deltaMinutes) =>
               void run(() =>
@@ -445,6 +549,13 @@ export default function App() {
                 })
               )
             }
+            onSetAbsolute={(edge, minutes) => {
+              const raw = utcMsFromLocalMinutes(minutes, editEntry.tzOffsetMin, editEntry.localDate);
+              const ms = edge === 'end' && raw <= editEntry.startedAtMs ? raw + 86_400_000 : raw;
+              void run(() =>
+                dataLayer.updateEntry(editEntry.id, { [edge === 'start' ? 'startedAtMs' : 'endedAtMs']: ms })
+              );
+            }}
             onChangeNote={(note) => void run(() => dataLayer.updateEntry(editEntry.id, { note }))}
             onSplit={() => {
               const mid = snapMs((editEntry.startedAtMs + (editEntry.endedAtMs ?? nowMs)) / 2);
@@ -593,14 +704,35 @@ export default function App() {
         )}
       </Sheet>
 
+      <Sheet visible={sheet === 'calsync'} onClose={closeSheet} theme={theme}>
+        {sheet === 'calsync' && (
+          <CalendarSyncSheet
+            theme={theme}
+            supported={calSyncSupported}
+            permission={calSyncPermission}
+            loading={calSyncLoading}
+            calendars={calSyncCalendars}
+            selectedId={prefs.calendarSyncId}
+            lastSyncMs={prefs.calendarSyncLastMs}
+            busy={calSyncBusy}
+            onRequestPermission={() => void requestCalPermission()}
+            onSelectCalendar={(id) => updatePrefs({ calendarSyncId: id })}
+            onSyncNow={() => void syncCalendarNow()}
+            onDone={closeSheet}
+          />
+        )}
+      </Sheet>
+
       <Sheet visible={sheet === 'event' && !!editEvent} onClose={closeSheet} theme={theme}>
         {editEvent && (
           <EventSheet
             event={editEvent}
             categories={categories}
             theme={theme}
+            themeVariant={prefs.theme}
             canStartTimer={!timer}
             onChangeTitle={(title) => void run(() => eventLayer.update(editEvent.id, { title }))}
+            onChangeNote={(note) => void run(() => eventLayer.update(editEvent.id, { note }))}
             onNudge={(field, delta) =>
               void run(() =>
                 eventLayer.update(
@@ -608,6 +740,19 @@ export default function App() {
                   field === 'start'
                     ? { startMinute: editEvent.startMinute + delta }
                     : { durationMinutes: editEvent.durationMinutes + delta }
+                )
+              )
+            }
+            onSetAbsolute={(field, minutes) =>
+              void run(() =>
+                eventLayer.update(
+                  editEvent.id,
+                  field === 'start'
+                    ? { startMinute: minutes }
+                    : {
+                        durationMinutes:
+                          (minutes <= editEvent.startMinute ? minutes + 1440 : minutes) - editEvent.startMinute,
+                      }
                 )
               )
             }

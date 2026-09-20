@@ -12,9 +12,19 @@ export interface Prefs {
   theme: 'dark' | 'light';
   thresholdHours: number;
   dashRange: 'day' | 'week' | 'month';
+  /** Calendario del sistema elegido para sincronizar con Google. null = ninguno. */
+  calendarSyncId: string | null;
+  /** Última sincronización correcta (epoch ms). null = nunca. */
+  calendarSyncLastMs: number | null;
 }
 
-export const DEFAULT_PREFS: Prefs = { theme: 'dark', thresholdHours: 7, dashRange: 'week' };
+export const DEFAULT_PREFS: Prefs = {
+  theme: 'dark',
+  thresholdHours: 7,
+  dashRange: 'week',
+  calendarSyncId: null,
+  calendarSyncLastMs: null,
+};
 
 const FILE = new File(Paths.document, 'prefs.json');
 

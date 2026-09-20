@@ -104,17 +104,28 @@ export function compare(params: {
   entries: Entry[];
   nowMs: number;
   tzOffsetMin: number;
+  /**
+   * 0 = the period containing `today` (in-progress; truncated to elapsed
+   * time so it's compared fairly against the same slice of the previous
+   * period). N>0 = N periods back, fully complete — no truncation.
+   */
+  periodOffset?: number;
 }): Comparison {
   const { range, today, entries, nowMs, tzOffsetMin } = params;
+  const offset = params.periodOffset ?? 0;
+  const isCurrent = offset === 0;
 
-  const curStart = periodStart(range, today, 0);
+  const curStart = periodStart(range, today, offset);
   const curStartInstant = localMidnightMs(curStart) + tzOffsetMin * 60_000;
-  const elapsedMs = nowMs - curStartInstant;
+  const nextStart = periodStart(range, today, offset - 1);
 
-  const nextStart = range === 'day' ? shiftLocalDate(curStart, 1) : periodStart(range, today, -1);
+  const elapsedMs = isCurrent
+    ? nowMs - curStartInstant
+    : localMidnightMs(nextStart) + tzOffsetMin * 60_000 - curStartInstant;
+
   const current = sumPeriod({ entries, startDate: curStart, endDateExclusive: nextStart, elapsedMs, tzOffsetMin, nowMs });
 
-  const prevStart = periodStart(range, today, 1);
+  const prevStart = periodStart(range, today, offset + 1);
   const previous = sumPeriod({ entries, startDate: prevStart, endDateExclusive: curStart, elapsedMs, tzOffsetMin, nowMs });
 
   const hasEnoughHistory = previous.totalMinutes >= MIN_HISTORY_MINUTES;

@@ -37,6 +37,18 @@ export function currentDeviceTzOffsetMin(): number {
   return new Date().getTimezoneOffset();
 }
 
+/** Medianoche UTC de una fecha de pared 'YYYY-MM-DD' (valor en ms locales). */
+export function localMidnightMs(localDate: string): number {
+  const [y, m, d] = localDate.split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
+/** 'YYYY-MM-DD' desplazada N días, sin depender del huso del dispositivo. */
+export function shiftLocalDate(localDate: string, days: number): string {
+  const d = new Date(localMidnightMs(localDate) + days * 86_400_000);
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+
 /** Formatea un instante UTC en la hora local original de la entry (HH:mm). */
 export function formatLocalTime(utcMs: number, tzOffsetMin: number): string {
   const d = new Date(localMsFromUtc(utcMs, tzOffsetMin));

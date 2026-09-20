@@ -172,6 +172,23 @@ export function useTodos(from: string, to: string, revision: number, enabled = t
   return todos;
 }
 
+/** To-dos sin fecha ("Backlog"). */
+export function useBacklogTodos(revision: number, enabled = true) {
+  const [todos, setTodos] = useState<Todo[]>([]);
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    todoLayer
+      .listBacklog()
+      .then((rows) => alive && setTodos(rows))
+      .catch((err) => console.warn('listBacklogTodos failed', err));
+    return () => {
+      alive = false;
+    };
+  }, [revision, enabled]);
+  return todos;
+}
+
 /** Eventos planeados en un rango de fechas. */
 export function useEvents(from: string, to: string, revision: number, enabled = true) {
   const [events, setEvents] = useState<PlanEvent[]>([]);

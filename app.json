@@ -8,7 +8,11 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.dayTracker.ledger"
+      "bundleIdentifier": "com.dayTracker.ledger",
+      "infoPlist": {
+        "NSCalendarsUsageDescription": "Ledger syncs your planned events with your device calendar (and, through it, Google Calendar).",
+        "NSCalendarsFullAccessUsageDescription": "Ledger syncs your planned events with your device calendar (and, through it, Google Calendar)."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -24,7 +28,23 @@
     },
     "plugins": [
       "expo-sqlite",
-      "expo-sharing"
+      "expo-sharing",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Ledger syncs your planned events with your device calendar (and, through it, Google Calendar)."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0C0D10",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain"
+        }
+      ]
     ]
   }
 }

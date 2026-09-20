@@ -69,6 +69,11 @@ export function TimerBar(props: {
         <Text numberOfLines={1} style={[styles.name, { color: theme.text }]}>
           {props.displayName}
         </Text>
+        {timer.note ? (
+          <Text numberOfLines={1} style={[styles.target, { color: theme.text2 }]}>
+            {timer.note}
+          </Text>
+        ) : null}
         <Text style={[styles.since, { color: theme.text2 }]}>since {fmt12(startedMinute)}</Text>
       </View>
       <Text style={[styles.elapsed, { color: theme.text }]}>
@@ -106,6 +111,7 @@ const styles = StyleSheet.create({
   dot: { width: 12, height: 12, borderRadius: 4 },
   meta: { flex: 1 },
   name: { fontSize: 13.5, fontWeight: '600' },
+  target: { marginTop: 2, fontSize: 11, fontWeight: '500' },
   since: { marginTop: 2, fontSize: 11, fontWeight: '500', fontFamily: MONO, fontVariant: ['tabular-nums'] },
   elapsed: { fontSize: 20, fontWeight: '600', fontFamily: MONO, fontVariant: ['tabular-nums'], letterSpacing: -0.4 },
   stopBtn: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },

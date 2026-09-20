@@ -121,4 +121,50 @@ describe("todoLayer", () => {
     expect((await tl.getTodo(a.id)).categoryId).toBeNull();
     expect((await tl.getTodo(b.id)).categoryId).toBe(cat2.id);
   });
+
+  test("create sin dueDate crea un to-do en Backlog (dueDate null)", async () => {
+    const tl = createTodoLayer(ctx.db as any, makeDeps());
+    const t = await tl.create({ text: "Algún día" });
+    expect(t.dueDate).toBeNull();
+  });
+
+  test("listBacklog trae solo los sin fecha, ordenados por done/sortOrder", async () => {
+    const tl = createTodoLayer(ctx.db as any, makeDeps());
+    const a = await tl.create({ text: "Backlog A" });
+    const b = await tl.create({ text: "Backlog B" });
+    await tl.create({ text: "Con fecha", dueDate: "2024-03-10" });
+
+    const rows = await tl.listBacklog();
+    expect(rows.map((r) => r.id)).toEqual([a.id, b.id]);
+  });
+
+  test("listByDateRange y listOverdue no incluyen los de Backlog", async () => {
+    const tl = createTodoLayer(ctx.db as any, makeDeps());
+    await tl.create({ text: "Backlog" });
+    const dated = await tl.create({ text: "Con fecha", dueDate: "2024-03-10" });
+
+    expect((await tl.listByDateRange("2024-01-01", "2024-12-31")).map((r) => r.id)).toEqual([dated.id]);
+    expect((await tl.listOverdue("2024-03-20")).map((r) => r.id)).toEqual([dated.id]);
+  });
+
+  test("update: dueDate puede ponerse a null (mover a Backlog) y luego reasignarse", async () => {
+    const tl = createTodoLayer(ctx.db as any, makeDeps());
+    const t = await tl.create(input);
+
+    const backlogged = await tl.update(t.id, { dueDate: null });
+    expect(backlogged.dueDate).toBeNull();
+
+    const rescheduled = await tl.update(t.id, { dueDate: "2024-03-15" });
+    expect(rescheduled.dueDate).toBe("2024-03-15");
+  });
+
+  test("toggleDone en un to-do de Backlog no le asigna fecha", async () => {
+    const tl = createTodoLayer(ctx.db as any, makeDeps());
+    const t = await tl.create({ text: "Backlog" });
+
+    await tl.toggleDone(t.id, true, "2024-03-10");
+    const row = await tl.getTodo(t.id);
+    expect(row.done).toBe(1);
+    expect(row.dueDate).toBeNull();
+  });
 });

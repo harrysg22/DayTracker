@@ -1,4 +1,5 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { Category } from '../../db/schema';
 import { fmtDuration } from '../format';
 import { MONO } from '../theme';
@@ -10,9 +11,11 @@ export function CategoryPickerSheet(props: {
   recentUse: Record<string, number>;
   categoriesById: Record<string, Category>;
   theme: Theme;
-  onPick: (categoryId: string) => void;
+  onPick: (categoryId: string, target: string) => void;
 }) {
   const { theme } = props;
+  // Optional intention for this session — stored as the entry's note.
+  const [target, setTarget] = useState('');
   const selectable = props.categories.filter((c) => c.archived === 0);
   const ranked = [...selectable].sort(
     (a, b) => (props.recentUse[b.id] ?? 0) - (props.recentUse[a.id] ?? 0)
@@ -21,12 +24,21 @@ export function CategoryPickerSheet(props: {
   return (
     <View>
       <Text style={[styles.title, { color: theme.text }]}>Track what?</Text>
+      <Text style={[styles.eyebrow, { color: theme.text3 }]}>Target</Text>
+      <TextInput
+        value={target}
+        onChangeText={setTarget}
+        placeholder="optional — what are you aiming to do?"
+        placeholderTextColor={theme.text3}
+        returnKeyType="done"
+        style={[styles.input, { backgroundColor: theme.surface2, borderColor: theme.line, color: theme.text }]}
+      />
       <Text style={[styles.eyebrow, { color: theme.text3 }]}>Most used</Text>
       <View style={styles.grid}>
         {ranked.slice(0, 5).map((c) => (
           <Pressable
             key={c.id}
-            onPress={() => props.onPick(c.id)}
+            onPress={() => props.onPick(c.id, target.trim())}
             style={[styles.tile, { backgroundColor: theme.surface2 }]}
           >
             <View style={[styles.tileDot, { backgroundColor: c.color }]} />
@@ -41,7 +53,7 @@ export function CategoryPickerSheet(props: {
         {ranked.map((c, i) => (
           <Pressable
             key={c.id}
-            onPress={() => props.onPick(c.id)}
+            onPress={() => props.onPick(c.id, target.trim())}
             style={[
               styles.row,
               i < ranked.length - 1 && { borderBottomColor: theme.line, borderBottomWidth: StyleSheet.hairlineWidth },
@@ -64,6 +76,7 @@ export function CategoryPickerSheet(props: {
 const styles = StyleSheet.create({
   title: { fontSize: 17, fontWeight: '700', letterSpacing: -0.34 },
   eyebrow: { marginTop: 14, marginBottom: 10, fontSize: 11, fontWeight: '500', letterSpacing: 0.66, textTransform: 'uppercase' },
+  input: { marginBottom: 4, paddingVertical: 13, paddingHorizontal: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, fontSize: 13.5, fontWeight: '500' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tile: { width: '48%', flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 15, paddingHorizontal: 13, borderRadius: 16 },
   tileDot: { width: 12, height: 12, borderRadius: 4 },

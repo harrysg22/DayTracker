@@ -2,6 +2,7 @@ import { db, ensureDbReady, onDbReopen } from "./client";
 import { createDataLayer, type DataLayer } from "./dataLayer";
 import { createTodoLayer, type TodoLayer } from "./todos";
 import { createEventLayer, type EventLayer } from "./events";
+import { createCalendarSync, type CalendarSync } from "./calendarSync";
 
 export { ensureDbReady };
 export * from "./errors";
@@ -11,6 +12,8 @@ export type { Category, Entry, DailyRollup, NewCategory, NewEntry, Todo, NewTodo
 export type { CreateEntryInput, UpdateEntryPatch, DataLayer } from "./dataLayer";
 export type { CreateTodoInput, UpdateTodoPatch, TodoLayer } from "./todos";
 export type { CreateEventInput, UpdateEventPatch, EventLayer } from "./events";
+export { createCalendarSync, SYNC_WINDOW_DAYS } from "./calendarSync";
+export type { CalendarSync, CalendarSyncResult } from "./calendarSync";
 
 let _dataLayer: DataLayer | null = null;
 /**
@@ -42,10 +45,19 @@ export const eventLayer = new Proxy({} as EventLayer, {
   },
 });
 
+let _calendarSync: CalendarSync | null = null;
+export const calendarSync = new Proxy({} as CalendarSync, {
+  get(_t, prop) {
+    if (!_calendarSync) _calendarSync = createCalendarSync(db as any);
+    return (_calendarSync as any)[prop];
+  },
+});
+
 onDbReopen(() => {
   _dataLayer = null;
   _todoLayer = null;
   _eventLayer = null;
+  _calendarSync = null;
 });
 
 export { exportCSV, exportBackup, restoreBackup } from "./io";

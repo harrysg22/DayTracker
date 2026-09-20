@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { Category, PlanEvent } from '../../db/schema';
-import { fmt12, fmtDuration } from '../format';
+import { fmt12 } from '../format';
 import { MONO, RADIUS } from '../theme';
 import type { Theme } from '../theme';
+import { TimeWheelSheet } from '../components/TimeWheelSheet';
 
 /**
  * Editar un evento planeado. Los ± mueven en pasos de 15 minutos y escriben
@@ -13,9 +14,12 @@ export function EventSheet(props: {
   event: PlanEvent;
   categories: Category[];
   theme: Theme;
+  themeVariant: 'light' | 'dark';
   canStartTimer: boolean;
   onChangeTitle: (title: string) => void;
+  onChangeNote: (note: string | null) => void;
   onNudge: (field: 'start' | 'duration', deltaMinutes: number) => void;
+  onSetAbsolute: (field: 'start' | 'end', minutes: number) => void;
   onChangeCategory: (categoryId: string | null) => void;
   onStartTimer: () => void;
   onDelete: () => void;
@@ -23,7 +27,10 @@ export function EventSheet(props: {
 }) {
   const { theme, event } = props;
   const [title, setTitle] = useState(event.title);
+  const [note, setNote] = useState(event.note ?? '');
+  const [pickerField, setPickerField] = useState<'start' | 'end' | null>(null);
   useEffect(() => setTitle(event.title), [event.id, event.title]);
+  useEffect(() => setNote(event.note ?? ''), [event.id, event.note]);
 
   const commitTitle = () => {
     const value = title.trim();
@@ -31,11 +38,21 @@ export function EventSheet(props: {
     else if (!value) setTitle(event.title);
   };
 
+  const commitNote = () => {
+    const value = note.trim();
+    if (value !== (event.note ?? '')) props.onChangeNote(value || null);
+  };
+
   const category = event.categoryId ? props.categories.find((c) => c.id === event.categoryId) : null;
 
   const steppers = [
-    { key: 'start' as const, label: 'Starts', value: fmt12(event.startMinute) },
-    { key: 'duration' as const, label: 'Lasts', value: fmtDuration(event.durationMinutes) },
+    { key: 'start' as const, pickerKey: 'start' as const, label: 'Starts', value: fmt12(event.startMinute) },
+    {
+      key: 'duration' as const,
+      pickerKey: 'end' as const,
+      label: 'Ends',
+      value: fmt12(event.startMinute + event.durationMinutes),
+    },
   ];
 
   return (
@@ -47,6 +64,15 @@ export function EventSheet(props: {
         onBlur={commitTitle}
         returnKeyType="done"
         style={[styles.input, { backgroundColor: theme.surface2, color: theme.text }]}
+      />
+      <TextInput
+        value={note}
+        onChangeText={setNote}
+        onEndEditing={commitNote}
+        onBlur={commitNote}
+        placeholder="Notas"
+        placeholderTextColor={theme.text3}
+        style={[styles.notesInput, { backgroundColor: theme.surface2, color: theme.text }]}
       />
 
       <View style={{ marginTop: 12, gap: 7 }}>
@@ -60,7 +86,9 @@ export function EventSheet(props: {
             >
               <Text style={[styles.stepperSign, { color: theme.text }]}>−</Text>
             </Pressable>
-            <Text style={[styles.stepperValue, { color: theme.text }]}>{s.value}</Text>
+            <Pressable onPress={() => setPickerField(s.pickerKey)} hitSlop={4}>
+              <Text style={[styles.stepperValue, { color: theme.text }]}>{s.value}</Text>
+            </Pressable>
             <Pressable
               onPress={() => props.onNudge(s.key, 15)}
               hitSlop={4}
@@ -108,12 +136,25 @@ export function EventSheet(props: {
           <Text style={[styles.doneLabel, { color: theme.text }]}>Done</Text>
         </Pressable>
       </View>
+
+      <TimeWheelSheet
+        visible={pickerField !== null}
+        label={pickerField === 'start' ? 'Starts' : 'Ends'}
+        minutes={pickerField === 'start' ? event.startMinute : event.startMinute + event.durationMinutes}
+        themeVariant={props.themeVariant}
+        theme={theme}
+        onClose={() => setPickerField(null)}
+        onCommit={(m) => {
+          if (pickerField) props.onSetAbsolute(pickerField, m);
+        }}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   input: { borderRadius: 14, paddingHorizontal: 15, paddingVertical: 14, fontSize: 15, fontWeight: '600' },
+  notesInput: { marginTop: 8, borderRadius: 14, paddingHorizontal: 15, paddingVertical: 13, fontSize: 13.5, fontWeight: '500' },
   kicker: { marginTop: 16, marginBottom: 8, fontSize: 11, fontWeight: '500', letterSpacing: 0.66, textTransform: 'uppercase' },
 
   stepperRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

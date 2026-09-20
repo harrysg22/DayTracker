@@ -18,6 +18,7 @@ export function CategoriesScreen(props: {
   onExportCSV: () => void;
   onExportBackup: () => void;
   onRestoreBackup: () => void;
+  onOpenCalendarSync: () => void;
 }) {
   const { theme } = props;
   const active = props.categories.filter((c) => c.archived === 0);
@@ -110,6 +111,7 @@ export function CategoriesScreen(props: {
           </View>
 
           {[
+            { name: 'Google Calendar', sub: 'Two-way sync · event name and time', onPress: props.onOpenCalendarSync },
             { name: 'Export CSV', sub: 'One row per entry, local dates', onPress: props.onExportCSV },
             { name: 'Export backup', sub: 'Full snapshot of this device', onPress: props.onExportBackup },
             { name: 'Restore backup', sub: 'Replaces everything currently stored', onPress: props.onRestoreBackup },

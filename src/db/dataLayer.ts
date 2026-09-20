@@ -133,7 +133,7 @@ export function createDataLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
 
   async function startTimer(
     categoryId: string,
-    opts: { startedAtMs?: number; tzOffsetMin?: number } = {}
+    opts: { startedAtMs?: number; tzOffsetMin?: number; note?: string | null } = {}
   ): Promise<Entry> {
     const active = await getActiveTimer();
     if (active) throw new ActiveTimerExistsError(active);
@@ -152,7 +152,8 @@ export function createDataLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
       endedAtMs: null,
       tzOffsetMin,
       localDate,
-      note: null,
+      // Un "target" opcional: la intención de la sesión, fijada al arrancar.
+      note: opts.note ?? null,
       updatedAtMs: deps.now(),
       deletedAtMs: null,
     };

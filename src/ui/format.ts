@@ -34,6 +34,19 @@ export function fmtDuration(minutes: number): string {
   return `${mm}m`;
 }
 
+/** Minutes-from-midnight → a `Date` carrying that time (date part unused). */
+export function dateFromMinutes(minutes: number): Date {
+  const d = new Date();
+  const m = Math.round(minutes) % 1440;
+  d.setHours(Math.floor((m < 0 ? m + 1440 : m) / 60), (m < 0 ? m + 1440 : m) % 60, 0, 0);
+  return d;
+}
+
+/** Inverse of `dateFromMinutes`: local hours/minutes back to minutes-from-midnight. */
+export function minutesFromDate(date: Date): number {
+  return date.getHours() * 60 + date.getMinutes();
+}
+
 /** Live timer readout. `0:41:07` — always recomputed, never accumulated. */
 export function fmtElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));

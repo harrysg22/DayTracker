@@ -19,14 +19,16 @@ import type { Todo } from './schema';
  */
 export interface CreateTodoInput {
   text: string;
-  dueDate: string;
+  /** Omitir o pasar null = Backlog (sin fecha). */
+  dueDate?: string | null;
   categoryId?: string | null;
 }
 
 export interface UpdateTodoPatch {
   text?: string;
   categoryId?: string | null;
-  dueDate?: string;
+  /** null a propósito = mover a Backlog. */
+  dueDate?: string | null;
   sortOrder?: number;
 }
 
@@ -62,13 +64,22 @@ export function createTodoLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
       .orderBy(asc(todos.dueDate), asc(todos.sortOrder))) as Todo[];
   }
 
+  /** Sin fecha: el usuario decidió no comprometerse a un día. */
+  async function listBacklog(): Promise<Todo[]> {
+    return (await db
+      .select()
+      .from(todos)
+      .where(and(notDeleted, isNull(todos.dueDate)))
+      .orderBy(asc(todos.done), asc(todos.sortOrder))) as Todo[];
+  }
+
   async function create(input: CreateTodoInput): Promise<Todo> {
     const now = deps.now();
     const row: Todo = {
       id: deps.genId(),
       text: input.text.trim(),
       categoryId: input.categoryId ?? null,
-      dueDate: input.dueDate,
+      dueDate: input.dueDate ?? null,
       done: 0,
       doneAtMs: null,
       // El orden de inserción ES el orden de la lista: monótono y estable.
@@ -89,7 +100,10 @@ export function createTodoLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
       categoryId: Object.prototype.hasOwnProperty.call(patch, 'categoryId')
         ? patch.categoryId ?? null
         : existing.categoryId,
-      dueDate: patch.dueDate ?? existing.dueDate,
+      // `dueDate` puede ponerse a null a propósito (mover a Backlog), de ahí el hasOwnProperty.
+      dueDate: Object.prototype.hasOwnProperty.call(patch, 'dueDate')
+        ? patch.dueDate ?? null
+        : existing.dueDate,
       sortOrder: patch.sortOrder ?? existing.sortOrder,
       updatedAtMs,
     };
@@ -109,7 +123,7 @@ export function createTodoLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
       .set({
         done: done ? 1 : 0,
         doneAtMs: done ? now : null,
-        dueDate: done && existing.dueDate < today ? today : existing.dueDate,
+        dueDate: done && existing.dueDate != null && existing.dueDate < today ? today : existing.dueDate,
         updatedAtMs: now,
       })
       .where(eq(todos.id, id));
@@ -133,6 +147,7 @@ export function createTodoLayer(db: AnyDb, deps: DataLayerDeps = defaultDeps) {
     getTodo: getOrThrow,
     listByDateRange,
     listOverdue,
+    listBacklog,
     create,
     update,
     toggleDone,

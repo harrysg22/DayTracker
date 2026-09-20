@@ -66,6 +66,8 @@ export const THEMES: Record<ThemeName, Theme> = {
 export const PALETTE = [
   '#4C6FE7', '#0FA5A0', '#E8A33D', '#E86A9A', '#8B6FE0', '#E05656', '#8FA83C',
   '#E4772E', '#3D9BD1', '#6B7A99', '#3F9E6B', '#9B6A8F', '#A9714B', '#24B3C4',
+  '#8A3637', '#60428F', '#1A5BBE', '#AE3D00', '#8BA9FF', '#9A496D', '#00CDCD',
+  '#7C549A', '#828DFC', '#4CC67A', '#7C3D70', '#C56400', '#546BBF', '#3F37B3',
 ];
 
 /** Ink that stays legible on a given fill. */

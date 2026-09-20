@@ -52,3 +52,26 @@ export class SplitOutOfRangeError extends Error {
     this.name = "SplitOutOfRangeError";
   }
 }
+
+/** El usuario no concedió acceso al calendario del sistema. */
+export class CalendarPermissionError extends Error {
+  constructor() {
+    super("Calendar access is off. Enable it in iOS Settings to sync.");
+    this.name = "CalendarPermissionError";
+  }
+}
+
+/**
+ * No hay ningún calendario del sistema en el que se pueda escribir. Suele
+ * significar que no hay una cuenta de Google (u otra CalDAV) añadida en
+ * Ajustes de iOS → Calendario → Cuentas.
+ */
+export class NoWritableCalendarError extends Error {
+  constructor() {
+    super(
+      "No writable calendar found. Add your Google account in " +
+        "iOS Settings > Calendar > Accounts, with Calendars turned on."
+    );
+    this.name = "NoWritableCalendarError";
+  }
+}
