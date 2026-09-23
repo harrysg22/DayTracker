@@ -512,7 +512,14 @@ export default function App() {
           setEditEntryId(timer.id);
           setSheet(overThreshold ? 'long' : 'entry');
         }}
-        onPressStart={() => setSheet('picker')}
+        onPressStart={() => {
+          if (categories.length === 0) {
+            showToast('Create a category first');
+            void openCategorySheet(null);
+            return;
+          }
+          setSheet('picker');
+        }}
         onPressStop={() =>
           void run(
             () => dataLayer.stopTimer(),

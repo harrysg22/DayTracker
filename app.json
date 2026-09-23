@@ -9,7 +9,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dayTracker.ledger",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "infoPlist": {
         "NSCalendarsUsageDescription": "Ledger syncs your planned events with your device calendar (and, through it, Google Calendar).",
         "NSCalendarsFullAccessUsageDescription": "Ledger syncs your planned events with your device calendar (and, through it, Google Calendar)."
